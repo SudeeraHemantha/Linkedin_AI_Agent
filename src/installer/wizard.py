@@ -16,21 +16,44 @@ def get_bundle_base_path() -> Path:
         return Path(sys._MEIPASS)
     return Path(__file__).parent.resolve()
 
+def create_windows_lnk_shortcut(target_path: Path, shortcut_path: Path, working_dir: Path, description: str = "LinkedIn Autonomous Agent"):
+    """Generates a true Windows .lnk shortcut file via PowerShell WScript.Shell COM object."""
+    ps_script = (
+        f'$WshShell = New-Object -ComObject WScript.Shell; '
+        f'$Shortcut = $WshShell.CreateShortcut("{shortcut_path}"); '
+        f'$Shortcut.TargetPath = "{target_path}"; '
+        f'$Shortcut.WorkingDirectory = "{working_dir}"; '
+        f'$Shortcut.Description = "{description}"; '
+        f'$Shortcut.Save()'
+    )
+    try:
+        res = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_script], capture_output=True, text=True)
+        if res.returncode == 0 and shortcut_path.exists():
+            return True
+    except Exception as e:
+        print(f" -> PowerShell .lnk creation warning: {e}")
+    
+    # Fallback to .bat shortcut if .lnk COM call fails
+    bat_shortcut = shortcut_path.with_suffix(".bat")
+    with open(bat_shortcut, "w", encoding="utf-8") as f:
+        f.write(f'@echo off\ncd /d "{working_dir}"\ncall "{target_path}"\n')
+    return bat_shortcut.exists()
+
 class StandaloneInstallationWizard:
     def __init__(self, target_dir: str = None):
         if target_dir:
-            self.target_dir = Path(target_dir)
+            self.target_dir = Path(target_dir).resolve()
         else:
             appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
-            self.target_dir = Path(appdata) / "LinkedInAgent"
+            self.target_dir = (Path(appdata) / "LinkedInAgent").resolve()
         
         self.updater = GitHubReleaseUpdater()
 
     def run_installation_workflow(self, mock_archive_path: str = None, show_gui: bool = False) -> bool:
-        """Executes full automated installation sequence with explicit error logging."""
+        """Executes full hardened automated installation sequence."""
         try:
             print("================================================================")
-            print("    LinkedIn Autonomous Agent - Standalone Installation Wizard  ")
+            print("    LinkedIn Autonomous Agent - Hardened Installation Wizard    ")
             print("================================================================")
             print(f"[STEP 1/4] Target Installation Directory: {self.target_dir}")
 
@@ -69,22 +92,36 @@ class StandaloneInstallationWizard:
             init_db()
             print(f" -> SQLite Database active at: {db_path}")
 
-            # Step 4: Create Launcher Scripts & Desktop Shortcuts
-            print("[STEP 4/4] Creating launcher startup scripts & shortcuts...")
+            # Step 4: Create Hardened Launcher Script & Windows .LNK Desktop Shortcut
+            print("[STEP 4/4] Creating hardened launcher script & desktop .lnk shortcut...")
             boot_script_path = self.target_dir / "boot_agent.bat"
             with open(boot_script_path, "w", encoding="utf-8") as f:
                 f.write("@echo off\n")
-                f.write("echo Booting LinkedIn Autonomous Agent Local Daemon...\n")
-                f.write(f'cd /d "{self.target_dir}"\n')
+                f.write("setlocal enableextensions enabledelayedexpansion\n")
+                f.write('set "AGENT_DIR=%~dp0"\n')
+                f.write('set "AGENT_DIR=%AGENT_DIR:~0,-1%"\n')
+                f.write('cd /d "%AGENT_DIR%"\n')
+                f.write('set "PYTHONPATH=%AGENT_DIR%;%PYTHONPATH%"\n')
+                f.write("echo Starting LinkedIn Autonomous Agent Local Daemon...\n")
                 f.write("py -m uvicorn src.backend.main:app --host 127.0.0.1 --port 8000\n")
-                f.write("pause\n")
+                f.write("if %errorlevel% neq 0 (\n")
+                f.write("    echo.\n")
+                f.write("    echo [ERROR] Daemon terminated with status code %errorlevel%.\n")
+                f.write("    pause\n")
+                f.write(")\n")
 
-            desktop = Path(os.path.expanduser("~/Desktop"))
+            print(f" -> Hardened Launcher Batch generated: {boot_script_path}")
+
+            desktop = Path(os.path.expanduser("~/Desktop")).resolve()
             if desktop.exists():
-                shortcut_bat = desktop / "Launch LinkedIn Agent.bat"
-                with open(shortcut_bat, "w", encoding="utf-8") as f:
-                    f.write(f'@echo off\ncall "{boot_script_path}"\n')
-                print(f" -> Desktop Shortcut created: {shortcut_bat}")
+                lnk_path = desktop / "Launch LinkedIn Agent.lnk"
+                shortcut_created = create_windows_lnk_shortcut(
+                    target_path=boot_script_path,
+                    shortcut_path=lnk_path,
+                    working_dir=self.target_dir,
+                    description="LinkedIn Autonomous Agent Platform"
+                )
+                print(f" -> Windows Desktop Shortcut (.lnk) status: {shortcut_created} at {lnk_path}")
 
             print("================================================================")
             print(" SUCCESS: LinkedIn Autonomous Agent Installation Completed!   ")
@@ -96,7 +133,7 @@ class StandaloneInstallationWizard:
                     root.withdraw()
                     messagebox.showinfo(
                         "Installation Complete",
-                        f"LinkedIn Autonomous Agent has been installed successfully!\n\nLocation: {self.target_dir}\nShortcut: Desktop/Launch LinkedIn Agent.bat"
+                        f"LinkedIn Autonomous Agent has been installed successfully!\n\nLocation: {self.target_dir}\nShortcut: Desktop/Launch LinkedIn Agent.lnk"
                     )
                     root.destroy()
                 except Exception:
@@ -139,4 +176,3 @@ class StandaloneInstallationWizard:
 if __name__ == "__main__":
     wizard = StandaloneInstallationWizard()
     wizard.run_installation_workflow(show_gui=True)
-

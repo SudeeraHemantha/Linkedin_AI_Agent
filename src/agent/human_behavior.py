@@ -1,5 +1,6 @@
 import random
 import time
+import math
 from typing import List, Tuple
 
 def generate_bezier_curve(
@@ -14,9 +15,12 @@ def generate_bezier_curve(
     x0, y0 = start
     x3, y3 = end
 
+    # Ensure num_points is at least 2 to prevent division by zero
+    num_points = max(2, num_points)
+
     # Generate random control points offset from the straight line path
-    ctrl_offset1 = random.uniform(-100, 100)
-    ctrl_offset2 = random.uniform(-100, 100)
+    ctrl_offset1 = random.uniform(-80, 80)
+    ctrl_offset2 = random.uniform(-80, 80)
 
     x1 = x0 + (x3 - x0) * 0.25 + ctrl_offset1
     y1 = y0 + (y3 - y0) * 0.25 + ctrl_offset2
@@ -38,7 +42,7 @@ def random_human_delay(min_sec: float = 0.8, max_sec: float = 2.5):
     Sleeps for a randomized duration drawn from a normal distribution around the midpoint.
     """
     mean = (min_sec + max_sec) / 2.0
-    std_dev = (max_sec - min_sec) / 4.0
+    std_dev = max(0.01, (max_sec - min_sec) / 4.0)
     delay = random.gauss(mean, std_dev)
     clamped_delay = max(min_sec, min(max_sec, delay))
     time.sleep(clamped_delay)

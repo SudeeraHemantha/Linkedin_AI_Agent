@@ -3,15 +3,15 @@ import os
 from typing import Generator
 
 def get_db_connection() -> sqlite3.Connection:
-    """Creates a database connection with dict-like row access."""
+    """Creates a database connection with dict-like row access and enforced foreign keys."""
     db_path = os.environ.get("DATABASE_PATH", "linkedin_agent.db")
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
-
 def init_db():
-    """Initializes the SQLite database tables if they do not exist."""
+    """Initializes SQLite database tables and indexes if they do not exist."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -49,7 +49,7 @@ def init_db():
         content_json TEXT NOT NULL,
         is_default INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(user_id) REFERENCES users(id)
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     """)
 
@@ -65,7 +65,7 @@ def init_db():
         status TEXT DEFAULT 'APPLIED',
         match_score REAL DEFAULT 0.0,
         applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(user_id) REFERENCES users(id)
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     """)
 
@@ -80,9 +80,15 @@ def init_db():
     );
     """)
 
+    # Performance Indexes
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_otps_email_code ON otps(user_email, otp_code);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_job_apps_user ON job_applications(user_id);")
+
     conn.commit()
     conn.close()
 
 if __name__ == "__main__":
     init_db()
-    print("Database initialized successfully.")
+    print("Database initialized with foreign keys and performance indexes.")

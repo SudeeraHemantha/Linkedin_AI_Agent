@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 import hmac
 import base64
 import json
@@ -21,6 +21,7 @@ from src.backend.database import get_db_connection
 SECRET_KEY = os.environ.get("JWT_SECRET", "super-secret-local-key-linkedin-agent-2026")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 24 hours
+OTP_TTL_MINUTES = 5 # Strict 5-minute enterprise TTL
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -52,7 +53,7 @@ class TokenResponseSchema(BaseModel):
 
 # Utility Functions
 def hash_password(password: str) -> str:
-    """Enterprise-grade PBKDF2-HMAC-SHA256 password hashing with salt."""
+    """Enterprise-grade PBKDF2-HMAC-SHA256 password hashing with 100,000 iterations and static salt."""
     salt = b"linkedin_agent_static_salt_v1"
     hashed = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100000)
     return hashed.hex()
@@ -85,7 +86,6 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     sig_b64 = b64url(signature)
     return f"{hdr_b64}.{pay_b64}.{sig_b64}"
 
-
 def generate_otp() -> str:
     """Generates a secure 6-digit numeric OTP."""
     return f"{random.randint(100000, 999999)}"
@@ -93,50 +93,54 @@ def generate_otp() -> str:
 # API Endpoints
 @router.post("/register")
 def register_user(payload: UserRegisterSchema):
+    if not payload.username or not payload.email or not payload.password:
+        raise HTTPException(status_code=400, detail="Username, Email, and Password are required.")
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Check existing user
-    cursor.execute("SELECT id FROM users WHERE username = ? OR email = ?", (payload.username, payload.email))
+    cursor.execute("SELECT id FROM users WHERE username = ? OR email = ?", (payload.username.strip(), payload.email.strip().lower()))
     if cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=400, detail="Username or Email already registered.")
 
     hashed_pw = hash_password(payload.password)
+    clean_email = payload.email.strip().lower()
+    clean_username = payload.username.strip()
+
     cursor.execute(
         "INSERT INTO users (username, email, hashed_password, full_name, is_verified) VALUES (?, ?, ?, ?, 0)",
-        (payload.username, payload.email, hashed_pw, payload.full_name or payload.username)
+        (clean_username, clean_email, hashed_pw, payload.full_name or clean_username)
     )
-    user_id = cursor.lastrowid
 
-    # Generate enterprise OTP (valid for 10 minutes)
+    # Generate enterprise OTP (valid for strict 5 minutes)
     otp_code = generate_otp()
-    expires_at = (datetime.utcnow() + timedelta(minutes=10)).isoformat()
+    expires_at = (datetime.utcnow() + timedelta(minutes=OTP_TTL_MINUTES)).isoformat()
     cursor.execute(
         "INSERT INTO otps (user_email, otp_code, expires_at, is_used) VALUES (?, ?, ?, 0)",
-        (payload.email, otp_code, expires_at)
+        (clean_email, otp_code, expires_at)
     )
     
     conn.commit()
     conn.close()
 
-    # Mock OTP notification log (In production, dispatches via SMTP/Twilio)
-    print(f"[ENTERPRISE OTP DISPATCH] OTP for {payload.email}: {otp_code}")
+    print(f"[ENTERPRISE OTP DISPATCH] 5-min OTP for {clean_email}: {otp_code}")
 
     return {
-        "message": "User registered successfully. Verification OTP dispatched.",
-        "email": payload.email,
-        "debug_otp": otp_code  # Provided for seamless local testing
+        "message": "User registered successfully. Verification 2FA OTP dispatched.",
+        "email": clean_email,
+        "debug_otp": otp_code
     }
 
 @router.post("/verify-otp")
 def verify_otp(payload: VerifyOTPSchema):
     conn = get_db_connection()
     cursor = conn.cursor()
+    clean_email = payload.email.strip().lower()
 
     cursor.execute(
         "SELECT id, expires_at, is_used FROM otps WHERE user_email = ? AND otp_code = ? ORDER BY id DESC LIMIT 1",
-        (payload.email, payload.otp_code)
+        (clean_email, payload.otp_code.strip())
     )
     row = cursor.fetchone()
 
@@ -148,12 +152,20 @@ def verify_otp(payload: VerifyOTPSchema):
         conn.close()
         raise HTTPException(status_code=400, detail="OTP code has already been used.")
 
+    # Strict TTL Expiration Check
+    try:
+        expiry_dt = datetime.fromisoformat(row["expires_at"])
+        if expiry_dt < datetime.utcnow():
+            conn.close()
+            raise HTTPException(status_code=400, detail="OTP code has expired (5-minute TTL). Please request a new code.")
+    except (ValueError, TypeError):
+        pass
+
     # Mark OTP used & User verified
     cursor.execute("UPDATE otps SET is_used = 1 WHERE id = ?", (row["id"],))
-    cursor.execute("UPDATE users SET is_verified = 1 WHERE email = ?", (payload.email,))
+    cursor.execute("UPDATE users SET is_verified = 1 WHERE email = ?", (clean_email,))
     
-    # Fetch user details
-    cursor.execute("SELECT id, username, email, full_name, is_verified FROM users WHERE email = ?", (payload.email,))
+    cursor.execute("SELECT id, username, email, full_name, is_verified FROM users WHERE email = ?", (clean_email,))
     user_row = dict(cursor.fetchone())
     user_row["is_verified"] = bool(user_row["is_verified"])
     
@@ -169,21 +181,21 @@ def verify_otp(payload: VerifyOTPSchema):
         "user": user_row
     }
 
-
 @router.post("/login", response_model=TokenResponseSchema)
 def login(payload: LoginSchema):
     conn = get_db_connection()
     cursor = conn.cursor()
+    login_id = payload.username_or_email.strip().lower()
 
     cursor.execute(
-        "SELECT id, username, email, hashed_password, full_name, is_verified FROM users WHERE username = ? OR email = ?",
-        (payload.username_or_email, payload.username_or_email)
+        "SELECT id, username, email, hashed_password, full_name, is_verified FROM users WHERE LOWER(username) = ? OR LOWER(email) = ?",
+        (login_id, login_id)
     )
     user_row = cursor.fetchone()
     conn.close()
 
     if not user_row or not verify_password(payload.password, user_row["hashed_password"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials.")
+        raise HTTPException(status_code=401, detail="Invalid username or password.")
 
     user = {
         "id": user_row["id"],
@@ -203,25 +215,25 @@ def login(payload: LoginSchema):
 
 @router.post("/request-reset-otp")
 def request_reset_otp(email: str):
-
     conn = get_db_connection()
     cursor = conn.cursor()
+    clean_email = email.strip().lower()
 
-    cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+    cursor.execute("SELECT id FROM users WHERE LOWER(email) = ?", (clean_email,))
     if not cursor.fetchone():
         conn.close()
-        raise HTTPException(status_code=404, detail="Email not found.")
+        raise HTTPException(status_code=404, detail="Email not registered.")
 
     otp_code = generate_otp()
-    expires_at = (datetime.utcnow() + timedelta(minutes=10)).isoformat()
+    expires_at = (datetime.utcnow() + timedelta(minutes=OTP_TTL_MINUTES)).isoformat()
     cursor.execute(
         "INSERT INTO otps (user_email, otp_code, expires_at, is_used) VALUES (?, ?, ?, 0)",
-        (email, otp_code, expires_at)
+        (clean_email, otp_code, expires_at)
     )
     conn.commit()
     conn.close()
 
-    print(f"[RESET OTP DISPATCH] Password Reset OTP for {email}: {otp_code}")
+    print(f"[RESET OTP DISPATCH] Password Reset 5-min OTP for {clean_email}: {otp_code}")
 
     return {"message": "Password reset OTP sent to email.", "debug_otp": otp_code}
 
@@ -229,10 +241,11 @@ def request_reset_otp(email: str):
 def reset_password(payload: PasswordResetSchema):
     conn = get_db_connection()
     cursor = conn.cursor()
+    clean_email = payload.email.strip().lower()
 
     cursor.execute(
-        "SELECT id, is_used FROM otps WHERE user_email = ? AND otp_code = ? ORDER BY id DESC LIMIT 1",
-        (payload.email, payload.otp_code)
+        "SELECT id, expires_at, is_used FROM otps WHERE user_email = ? AND otp_code = ? ORDER BY id DESC LIMIT 1",
+        (clean_email, payload.otp_code.strip())
     )
     row = cursor.fetchone()
 
@@ -240,8 +253,16 @@ def reset_password(payload: PasswordResetSchema):
         conn.close()
         raise HTTPException(status_code=400, detail="Invalid or expired OTP code.")
 
+    try:
+        expiry_dt = datetime.fromisoformat(row["expires_at"])
+        if expiry_dt < datetime.utcnow():
+            conn.close()
+            raise HTTPException(status_code=400, detail="Password reset OTP code has expired.")
+    except (ValueError, TypeError):
+        pass
+
     new_hashed = hash_password(payload.new_password)
-    cursor.execute("UPDATE users SET hashed_password = ? WHERE email = ?", (new_hashed, payload.email))
+    cursor.execute("UPDATE users SET hashed_password = ? WHERE email = ?", (new_hashed, clean_email))
     cursor.execute("UPDATE otps SET is_used = 1 WHERE id = ?", (row["id"],))
 
     conn.commit()

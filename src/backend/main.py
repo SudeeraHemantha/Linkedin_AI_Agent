@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.backend.database import init_db
 from src.backend.auth import router as auth_router
 from src.backend.llm_hooks import router as llm_router
+from src.backend.preferences import router as preferences_router
 
 app = FastAPI(
     title="LinkedIn Autonomous Agent Backend",
@@ -22,6 +23,8 @@ app.add_middleware(
 # Router Registrations
 app.include_router(auth_router)
 app.include_router(llm_router)
+app.include_router(preferences_router)
+
 
 @app.on_event("startup")
 def on_startup():

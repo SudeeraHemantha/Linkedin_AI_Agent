@@ -123,7 +123,7 @@ class StandaloneInstallationWizard:
             print(f" -> SQLite Database active at: {db_path}")
 
             # Step 4: Create Hardened Launcher Script & Windows .LNK Desktop Shortcuts
-            print("[STEP 4/4] Creating hardened launcher script & desktop shortcuts...")
+            print("[STEP 4/4] Creating hardened dual-server launcher script & desktop shortcuts...")
             boot_script_path = self.target_dir / "boot_agent.bat"
             with open(boot_script_path, "w", encoding="utf-8") as f:
                 f.write("@echo off\n")
@@ -132,14 +132,17 @@ class StandaloneInstallationWizard:
                 f.write('set "AGENT_DIR=%AGENT_DIR:~0,-1%"\n')
                 f.write('cd /d "%AGENT_DIR%"\n')
                 f.write('set "PYTHONPATH=%AGENT_DIR%;%PYTHONPATH%"\n')
-                f.write("echo Starting LinkedIn Autonomous Agent Local Daemon...\n")
+                f.write("echo Starting Backend FastAPI Server (Port 8000)...\n")
+                f.write('start "LinkedIn Agent Backend" /min cmd /c "cd /d "%AGENT_DIR%" && set "PYTHONPATH=%AGENT_DIR%;%PYTHONPATH%" && py -m uvicorn src.backend.main:app --host 127.0.0.1 --port 8000"\n')
+                f.write("echo Starting Frontend Vite Client (Port 3000)...\n")
+                f.write('start "LinkedIn Agent Frontend" /min cmd /c "cd /d "%AGENT_DIR%\\src\\frontend" && npm run dev"\n')
+                f.write("echo Waiting for servers to initialize...\n")
+                f.write("timeout /t 3 /nobreak >nul\n")
                 f.write('start "" "http://localhost:3000"\n')
-                f.write("py -m uvicorn src.backend.main:app --host 127.0.0.1 --port 8000\n")
-                f.write("if %errorlevel% neq 0 (\n")
-                f.write("    echo.\n")
-                f.write("    echo [ERROR] Daemon terminated with status code %errorlevel%.\n")
-                f.write("    pause\n")
-                f.write(")\n")
+                f.write("echo ==================================================================\n")
+                f.write("echo   LinkedIn Agent Active (Backend: 8000 | Frontend: 3000)\n")
+                f.write("echo ==================================================================\n")
+
 
 
             print(f" -> Hardened Launcher Batch generated: {boot_script_path}")

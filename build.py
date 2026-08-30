@@ -39,12 +39,25 @@ def build_package():
     shutil.copy(ROOT_DIR / "requirements.txt", RELEASE_DIR / "requirements.txt")
 
     # 3. Create Standalone Execution Script
-    print("[3/4] Generating Launcher Script...")
+    print("[3/4] Generating Hardened Dual-Server Launcher Script...")
     with open(RELEASE_DIR / "start_agent.bat", "w", encoding="utf-8") as f:
         f.write("@echo off\n")
-        f.write("echo Booting LinkedIn Autonomous Agent Backend & UI...\n")
+        f.write("setlocal enableextensions enabledelayedexpansion\n")
+        f.write('set "AGENT_DIR=%~dp0"\n')
+        f.write('set "AGENT_DIR=%AGENT_DIR:~0,-1%"\n')
+        f.write('cd /d "%AGENT_DIR%"\n')
+        f.write('set "PYTHONPATH=%AGENT_DIR%;%PYTHONPATH%"\n')
+        f.write("echo Starting Backend FastAPI Server (Port 8000)...\n")
+        f.write('start "LinkedIn Agent Backend" /min cmd /c "cd /d "%AGENT_DIR%" && set "PYTHONPATH=%AGENT_DIR%;%PYTHONPATH%" && py -m uvicorn src.backend.main:app --host 127.0.0.1 --port 8000"\n')
+        f.write("echo Starting Frontend Vite Client (Port 3000)...\n")
+        f.write('start "LinkedIn Agent Frontend" /min cmd /c "cd /d "%AGENT_DIR%\\src\\frontend" && npm run dev"\n')
+        f.write("echo Waiting for servers to initialize...\n")
+        f.write("timeout /t 3 /nobreak >nul\n")
         f.write('start "" "http://localhost:3000"\n')
-        f.write("py -m uvicorn src.backend.main:app --host 127.0.0.1 --port 8000 --reload\n")
+        f.write("echo ==================================================================\n")
+        f.write("echo   LinkedIn Agent Active (Backend: 8000 | Frontend: 3000)\n")
+        f.write("echo ==================================================================\n")
+
 
 
     # 4. Create ZIP Release Archive

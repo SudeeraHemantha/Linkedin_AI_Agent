@@ -51,9 +51,12 @@ def build_package():
         f.write('start "LinkedIn Agent Backend" /min cmd /c "cd /d "%AGENT_DIR%" && set "PYTHONPATH=%AGENT_DIR%;%PYTHONPATH%" && py -m uvicorn src.backend.main:app --host 127.0.0.1 --port 8000"\n')
         f.write("echo Starting Frontend Vite Client (Port 3000)...\n")
         f.write('start "LinkedIn Agent Frontend" /min cmd /c "cd /d "%AGENT_DIR%\\src\\frontend" && npm run dev"\n')
+        f.write("echo Starting System Tray Background Daemon Manager...\n")
+        f.write('start "LinkedIn Agent Tray" /min cmd /c "cd /d "%AGENT_DIR%" && set "PYTHONPATH=%AGENT_DIR%;%PYTHONPATH%" && py src/installer/tray_app.py"\n')
         f.write("echo Waiting for servers to initialize...\n")
         f.write("timeout /t 3 /nobreak >nul\n")
         f.write('start "" "http://localhost:3000"\n')
+
         f.write("echo ==================================================================\n")
         f.write("echo   LinkedIn Agent Active (Backend: 8000 | Frontend: 3000)\n")
         f.write("echo ==================================================================\n")

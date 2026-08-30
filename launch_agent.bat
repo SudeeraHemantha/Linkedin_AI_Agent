@@ -14,11 +14,15 @@ start "LinkedIn Agent Backend" /min cmd /c "cd /d "%AGENT_DIR%" && set "PYTHONPA
 echo [2/3] Starting Frontend Vite SPA Client (Port 3000)...
 start "LinkedIn Agent Frontend" /min cmd /c "cd /d "%AGENT_DIR%\src\frontend" && npm run dev"
 
-echo [3/3] Waiting for servers to initialize...
+echo [3/4] Launching System Tray Background Daemon Manager...
+start "LinkedIn Agent Tray" /min cmd /c "cd /d "%AGENT_DIR%" && set "PYTHONPATH=%AGENT_DIR%;%PYTHONPATH%" && py src/installer/tray_app.py"
+
+echo [4/4] Waiting for servers to initialize...
 timeout /t 3 /nobreak >nul
 
 echo Opening browser interface at http://localhost:3000...
 start "" "http://localhost:3000"
+
 
 echo ==================================================================
 echo   LinkedIn Agent active! (Backend: 8000 | Frontend: 3000)

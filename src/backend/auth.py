@@ -91,6 +91,8 @@ def generate_otp() -> str:
     return f"{random.randint(100000, 999999)}"
 
 # API Endpoints
+import sqlite3
+
 @router.post("/register")
 def register_user(payload: UserRegisterSchema):
     if not payload.username or not payload.email or not payload.password:
@@ -108,10 +110,14 @@ def register_user(payload: UserRegisterSchema):
     clean_email = payload.email.strip().lower()
     clean_username = payload.username.strip()
 
-    cursor.execute(
-        "INSERT INTO users (username, email, hashed_password, full_name, is_verified) VALUES (?, ?, ?, ?, 0)",
-        (clean_username, clean_email, hashed_pw, payload.full_name or clean_username)
-    )
+    try:
+        cursor.execute(
+            "INSERT INTO users (username, email, hashed_password, full_name, is_verified) VALUES (?, ?, ?, ?, 0)",
+            (clean_username, clean_email, hashed_pw, payload.full_name or clean_username)
+        )
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Username or Email already registered.")
 
     # Generate enterprise OTP (valid for strict 5 minutes)
     otp_code = generate_otp()
@@ -123,6 +129,7 @@ def register_user(payload: UserRegisterSchema):
     
     conn.commit()
     conn.close()
+
 
     print(f"[ENTERPRISE OTP DISPATCH] 5-min OTP for {clean_email}: {otp_code}")
 

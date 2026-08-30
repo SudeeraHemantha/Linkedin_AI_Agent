@@ -15,6 +15,19 @@ export default function AuthPage({ onLoginSuccess }) {
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Helper to safely parse JSON response or return fallback error object
+  const parseJsonResponse = async (res) => {
+    try {
+      const text = await res.text();
+      if (!text || text.trim() === '') {
+        return {};
+      }
+      return JSON.parse(text);
+    } catch (err) {
+      return { detail: 'Server error or invalid response format.' };
+    }
+  };
+
   // Handle Login
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -26,8 +39,8 @@ export default function AuthPage({ onLoginSuccess }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username_or_email: username, password })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Login failed.');
+      const data = await parseJsonResponse(res);
+      if (!res.ok) throw new Error(data.detail || 'Server error or invalid credentials.');
       onLoginSuccess(data.user, data.access_token);
     } catch (err) {
       setErrorMsg(err.message);
@@ -47,8 +60,8 @@ export default function AuthPage({ onLoginSuccess }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, email, password, full_name: fullName })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Registration failed.');
+      const data = await parseJsonResponse(res);
+      if (!res.ok) throw new Error(data.detail || 'Server error or registration failed.');
       
       setDebugOtp(data.debug_otp || '');
       setShowOtpModal(true);
@@ -70,8 +83,8 @@ export default function AuthPage({ onLoginSuccess }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, otp_code: otpCode })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Invalid OTP code.');
+      const data = await parseJsonResponse(res);
+      if (!res.ok) throw new Error(data.detail || 'Server error or invalid OTP code.');
       
       setShowOtpModal(false);
       onLoginSuccess(data.user, data.access_token);
@@ -93,8 +106,8 @@ export default function AuthPage({ onLoginSuccess }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, otp_code: otpCode, new_password: password })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Password reset failed.');
+      const data = await parseJsonResponse(res);
+      if (!res.ok) throw new Error(data.detail || 'Server error or password reset failed.');
       alert('Password updated! You can now log in.');
       setMode('login');
     } catch (err) {
@@ -103,6 +116,7 @@ export default function AuthPage({ onLoginSuccess }) {
       setLoading(false);
     }
   };
+
 
   return (
     <div style={{

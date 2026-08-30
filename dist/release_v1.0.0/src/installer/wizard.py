@@ -7,6 +7,7 @@ import traceback
 import tkinter as tk
 from tkinter import messagebox
 from pathlib import Path
+from typing import List
 from src.installer.updater import GitHubReleaseUpdater
 from src.backend.database import init_db
 
@@ -15,6 +16,35 @@ def get_bundle_base_path() -> Path:
     if hasattr(sys, '_MEIPASS'):
         return Path(sys._MEIPASS)
     return Path(__file__).parent.resolve()
+
+def get_user_desktop_paths() -> List[Path]:
+    """Resolves all physical Windows Desktop folders, including OneDrive and User Shell Registry mappings."""
+    desktop_paths = []
+    
+    # 1. Standard User Profile Desktop
+    home_desktop = (Path(os.path.expanduser("~")) / "Desktop").resolve()
+    if home_desktop.exists():
+        desktop_paths.append(home_desktop)
+        
+    # 2. OneDrive Desktop Mapping
+    onedrive_desktop = (Path(os.path.expanduser("~")) / "OneDrive" / "Desktop").resolve()
+    if onedrive_desktop.exists() and onedrive_desktop not in desktop_paths:
+        desktop_paths.append(onedrive_desktop)
+
+    # 3. Query Windows Registry for User Shell Folders Desktop
+    try:
+        import winreg
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders")
+        desktop_reg, _ = winreg.QueryValueEx(key, "Desktop")
+        winreg.CloseKey(key)
+        expanded = os.path.expandvars(desktop_reg)
+        reg_path = Path(expanded).resolve()
+        if reg_path.exists() and reg_path not in desktop_paths:
+            desktop_paths.append(reg_path)
+    except Exception:
+        pass
+
+    return desktop_paths
 
 def create_windows_lnk_shortcut(target_path: Path, shortcut_path: Path, working_dir: Path, description: str = "LinkedIn Autonomous Agent"):
     """Generates a true Windows .lnk shortcut file via PowerShell WScript.Shell COM object."""
@@ -92,8 +122,8 @@ class StandaloneInstallationWizard:
             init_db()
             print(f" -> SQLite Database active at: {db_path}")
 
-            # Step 4: Create Hardened Launcher Script & Windows .LNK Desktop Shortcut
-            print("[STEP 4/4] Creating hardened launcher script & desktop .lnk shortcut...")
+            # Step 4: Create Hardened Launcher Script & Windows .LNK Desktop Shortcuts
+            print("[STEP 4/4] Creating hardened launcher script & desktop shortcuts...")
             boot_script_path = self.target_dir / "boot_agent.bat"
             with open(boot_script_path, "w", encoding="utf-8") as f:
                 f.write("@echo off\n")
@@ -112,19 +142,24 @@ class StandaloneInstallationWizard:
 
             print(f" -> Hardened Launcher Batch generated: {boot_script_path}")
 
-            desktop = Path(os.path.expanduser("~/Desktop")).resolve()
-            if desktop.exists():
-                lnk_path = desktop / "Launch LinkedIn Agent.lnk"
+            # Resolve all Desktop folders (OneDrive + standard + User Shell Folders)
+            desktop_dirs = get_user_desktop_paths()
+            for desktop_dir in desktop_dirs:
+                lnk_path = desktop_dir / "Launch LinkedIn Agent.lnk"
                 shortcut_created = create_windows_lnk_shortcut(
                     target_path=boot_script_path,
                     shortcut_path=lnk_path,
                     working_dir=self.target_dir,
                     description="LinkedIn Autonomous Agent Platform"
                 )
-                print(f" -> Windows Desktop Shortcut (.lnk) status: {shortcut_created} at {lnk_path}")
+                print(f" -> Shortcut (.lnk) created at: {lnk_path} (Success: {shortcut_created})")
 
             print("================================================================")
             print(" SUCCESS: LinkedIn Autonomous Agent Installation Completed!   ")
+            print("================================================================")
+            print(" Direct Launcher URL:  http://127.0.0.1:8000                    ")
+            print(" Interactive Swagger:  http://127.0.0.1:8000/docs               ")
+            print(" Or run directly via:  py run_app.py                            ")
             print("================================================================")
 
             if show_gui:
@@ -133,7 +168,7 @@ class StandaloneInstallationWizard:
                     root.withdraw()
                     messagebox.showinfo(
                         "Installation Complete",
-                        f"LinkedIn Autonomous Agent has been installed successfully!\n\nLocation: {self.target_dir}\nShortcut: Desktop/Launch LinkedIn Agent.lnk"
+                        f"LinkedIn Autonomous Agent has been installed successfully!\n\nLocation: {self.target_dir}\nShortcuts generated on Desktop.\n\nLocal Daemon: http://127.0.0.1:8000"
                     )
                     root.destroy()
                 except Exception:

@@ -21,6 +21,8 @@ except ImportError:
     jwt = None
 
 from src.backend.database import get_db_connection
+from src.backend.email_service import send_otp_email
+
 
 SECRET_KEY = os.environ.get("JWT_SECRET", "super-secret-local-key-linkedin-agent-2026")
 ALGORITHM = "HS256"
@@ -259,6 +261,9 @@ def register_user(payload: UserRegisterSchema):
         conn.commit()
         conn.close()
 
+        # Trigger live SMTP dispatch (or dev-mode fallback)
+        send_otp_email(clean_email, otp_code)
+
         print(f"[ENTERPRISE OTP DISPATCH] 5-min OTP for {clean_email}: {otp_code}")
 
         return {
@@ -266,6 +271,7 @@ def register_user(payload: UserRegisterSchema):
             "email": clean_email,
             "debug_otp": otp_code
         }
+
     except Exception as exc:
         conn.rollback()
         conn.close()
@@ -392,9 +398,13 @@ def request_reset_otp(email: str):
         conn.commit()
         conn.close()
 
+        # Trigger live SMTP dispatch (or dev-mode fallback)
+        send_otp_email(clean_email, otp_code)
+
         print(f"[RESET OTP DISPATCH] Password Reset 5-min OTP for {clean_email}: {otp_code}")
 
         return {"message": "Password reset OTP sent to email.", "debug_otp": otp_code}
+
     except Exception as exc:
         conn.rollback()
         conn.close()

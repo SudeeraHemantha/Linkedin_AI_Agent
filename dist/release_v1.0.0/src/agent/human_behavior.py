@@ -39,10 +39,10 @@ def generate_bezier_curve(
     y2 = y0 + (target_y - y0) * random.uniform(0.6, 0.8) - ctrl_offset2
 
     points = []
-    for i in range(num_points):
-        # Non-linear t parameter (ease-in ease-out velocity curve)
-        step = i / float(num_points - 1)
-        # Sine-based easing: slow start, fast middle, decelerate at end
+    total_steps = num_points if (target_x, target_y) == (x3, y3) else max(2, num_points - 1)
+
+    for i in range(total_steps):
+        step = i / float(max(1, total_steps - 1))
         t = 0.5 * (1.0 - math.cos(step * math.pi))
 
         # Cubic Bezier evaluation
@@ -50,7 +50,7 @@ def generate_bezier_curve(
         yt = ((1 - t) ** 3) * y0 + 3 * ((1 - t) ** 2) * t * y1 + 3 * (1 - t) * (t ** 2) * y2 + (t ** 3) * target_y
 
         # Micro-jitter noise (except at start and exact end)
-        if 0 < i < num_points - 1:
+        if 0 < i < total_steps - 1:
             xt += random.gauss(0, jitter * 0.3)
             yt += random.gauss(0, jitter * 0.3)
 
@@ -61,6 +61,7 @@ def generate_bezier_curve(
         points.append((round(x3, 2), round(y3, 2)))
 
     return points
+
 
 def gaussian_delay(mean: float, std_dev: float, min_val: float, max_val: float) -> float:
     """Returns a delay sampled from a Gaussian distribution clamped within [min_val, max_val]."""

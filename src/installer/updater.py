@@ -41,9 +41,20 @@ class GitHubReleaseUpdater:
                 "download_url": f"https://github.com/{GITHUB_REPO}/archive/refs/heads/main.zip"
             }
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            return {
+                "status": "fallback",
+                "tag_name": "v1.0.0",
+                "name": "LinkedIn Agent v1.0.0 Local Release",
+                "message": str(e)
+            }
 
-        return {"status": "error", "message": "Failed to retrieve release payload."}
+        return {
+            "status": "fallback",
+            "tag_name": "v1.0.0",
+            "name": "LinkedIn Agent v1.0.0 Local Release",
+            "message": "Failed to retrieve release payload."
+        }
+
 
     def download_release_archive(self, download_url: str, output_path: str) -> bool:
         """Downloads the release zip archive file to output_path."""

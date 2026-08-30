@@ -14,19 +14,20 @@ def main():
     print("==================================================================")
     print("      LinkedIn Autonomous Agent - Direct Daemon Launcher         ")
     print("==================================================================")
-    print("  Local Backend API:  http://127.0.0.1:8000                     ")
-    print("  API Documentation:  http://127.0.0.1:8000/docs                ")
-    print("  Health Check:       http://127.0.0.1:8000/api/health            ")
+    print("  Local Frontend Client: http://localhost:3000                   ")
+    print("  Local Backend API:     http://127.0.0.1:8000                   ")
+    print("  API Documentation:     http://127.0.0.1:8000/docs              ")
     print("==================================================================")
-    print("Booting local daemon server...\n")
+    print("Booting local daemon server & launching frontend UI...\n")
 
-    # Automatically open local API docs / dashboard in default browser after short delay
+    # Automatically open local frontend client in default browser
     try:
-        webbrowser.open("http://127.0.0.1:8000/docs")
+        webbrowser.open("http://localhost:3000")
     except Exception:
         pass
 
     uvicorn.run("src.backend.main:app", host="127.0.0.1", port=8000, reload=True)
+
 
 if __name__ == "__main__":
     main()

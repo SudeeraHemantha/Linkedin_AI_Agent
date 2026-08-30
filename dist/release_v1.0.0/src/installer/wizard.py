@@ -133,12 +133,14 @@ class StandaloneInstallationWizard:
                 f.write('cd /d "%AGENT_DIR%"\n')
                 f.write('set "PYTHONPATH=%AGENT_DIR%;%PYTHONPATH%"\n')
                 f.write("echo Starting LinkedIn Autonomous Agent Local Daemon...\n")
+                f.write('start "" "http://localhost:3000"\n')
                 f.write("py -m uvicorn src.backend.main:app --host 127.0.0.1 --port 8000\n")
                 f.write("if %errorlevel% neq 0 (\n")
                 f.write("    echo.\n")
                 f.write("    echo [ERROR] Daemon terminated with status code %errorlevel%.\n")
                 f.write("    pause\n")
                 f.write(")\n")
+
 
             print(f" -> Hardened Launcher Batch generated: {boot_script_path}")
 

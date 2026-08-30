@@ -43,7 +43,9 @@ def build_package():
     with open(RELEASE_DIR / "start_agent.bat", "w", encoding="utf-8") as f:
         f.write("@echo off\n")
         f.write("echo Booting LinkedIn Autonomous Agent Backend & UI...\n")
+        f.write('start "" "http://localhost:3000"\n')
         f.write("py -m uvicorn src.backend.main:app --host 127.0.0.1 --port 8000 --reload\n")
+
 
     # 4. Create ZIP Release Archive
     print("[4/4] Creating Release Zip Package Archive...")

@@ -1,8 +1,8 @@
 import os
-from typing import Optional, Dict, Any
+import random
+from typing import Optional, Dict, Any, List
 
-# Note: playwright module imported dynamically inside functions so backend runs cleanly even if playwright binaries are being downloaded
-def get_stealth_browser_args() -> list:
+def get_stealth_browser_args() -> List[str]:
     """Returns chromium command line arguments engineered for bot detection evasion."""
     return [
         "--disable-blink-features=AutomationControlled",
@@ -18,6 +18,21 @@ def get_stealth_browser_args() -> list:
         "--remote-debugging-port=9222"
     ]
 
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0"
+]
+
+VIEWPORTS = [
+    {"width": 1920, "height": 1080},
+    {"width": 1536, "height": 864},
+    {"width": 1440, "height": 900},
+    {"width": 1366, "height": 768},
+    {"width": 1280, "height": 800}
+]
+
 def get_stealth_init_script() -> str:
     """JavaScript injected into page context to mask automation flags."""
     return """
@@ -28,8 +43,20 @@ def get_stealth_init_script() -> str:
 
     // Mock languages and plugins
     Object.defineProperty(navigator, 'languages', {
-        get: () => ['en-US', 'en']
+        get: () => ['en-US', 'en', 'es']
     });
+
+    Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5]
+    });
+
+    // Mock permissions API query
+    const originalQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+            Promise.resolve({ state: Notification.permission }) :
+            originalQuery(parameters)
+    );
 
     // Mock chrome runtime object
     window.chrome = {
@@ -46,29 +73,28 @@ async def launch_stealth_context(
     headless: bool = False
 ):
     """
-    Launches a Playwright browser context using either a persistent Chrome profile or a clean context.
+    Launches a Playwright browser context using a persistent Chrome profile session
+    or fallback clean context with randomized viewport & authentic stealth injection.
     """
-    chrome_profile_path = user_data_dir or os.environ.get(
-        "CHROME_PROFILE_PATH", 
-        os.path.expanduser("~/AppData/Local/Google/Chrome/User Data/Default")
-    )
+    appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
+    default_profile_dir = os.path.join(appdata, "LinkedInAgent", "chrome_user_data")
+    chrome_profile_path = user_data_dir or os.environ.get("CHROME_PROFILE_PATH", default_profile_dir)
     
+    os.makedirs(chrome_profile_path, exist_ok=True)
     args = get_stealth_browser_args()
     
-    if os.path.exists(chrome_profile_path):
-        context = await playwright_instance.chromium.launch_persistent_context(
-            user_data_dir=chrome_profile_path,
-            headless=headless,
-            args=args,
-            viewport={"width": 1280, "height": 800},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        )
-    else:
-        browser = await playwright_instance.chromium.launch(headless=headless, args=args)
-        context = await browser.new_context(
-            viewport={"width": 1280, "height": 800},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        )
+    selected_viewport = random.choice(VIEWPORTS)
+    selected_ua = random.choice(USER_AGENTS)
+
+    context = await playwright_instance.chromium.launch_persistent_context(
+        user_data_dir=chrome_profile_path,
+        headless=headless,
+        args=args,
+        viewport=selected_viewport,
+        user_agent=selected_ua,
+        locale="en-US",
+        timezone_id="America/New_York"
+    )
 
     # Inject stealth scripts into all new pages
     await context.add_init_script(get_stealth_init_script())

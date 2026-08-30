@@ -118,6 +118,22 @@ def init_db():
     );
     """)
 
+    # Job listings harvester table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS job_listings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        job_title TEXT NOT NULL,
+        company TEXT NOT NULL,
+        location TEXT,
+        job_url TEXT UNIQUE NOT NULL,
+        ats_match_score REAL DEFAULT 0.0,
+        status TEXT DEFAULT 'QUEUED_FOR_APPLICATION',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    """)
+
     # Agent execution logs
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS agent_logs (
@@ -135,6 +151,9 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_otps_email_code ON otps(user_email, otp_code);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_job_apps_user ON job_applications(user_id);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_prefs_user_id ON user_preferences(user_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_job_listings_url ON job_listings(job_url);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_job_listings_user ON job_listings(user_id);")
+
 
     conn.commit()
     conn.close()

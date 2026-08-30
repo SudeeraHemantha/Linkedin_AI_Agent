@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Shield, KeyRound, Mail, User, Lock, ArrowRight, CheckCircle2, Sparkles } from 'lucide-react';
+import { Shield, KeyRound, Mail, User, Lock, ArrowRight, CheckCircle2, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
 
 export default function AuthPage({ onLoginSuccess }) {
   const [mode, setMode] = useState('login'); // 'login' | 'register' | 'forgot'
@@ -13,6 +13,7 @@ export default function AuthPage({ onLoginSuccess }) {
   const [otpCode, setOtpCode] = useState('');
   const [debugOtp, setDebugOtp] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [errorCode, setErrorCode] = useState('');
   const [loading, setLoading] = useState(false);
 
   // Helper to safely parse JSON response or return fallback error object
@@ -20,11 +21,17 @@ export default function AuthPage({ onLoginSuccess }) {
     try {
       const text = await res.text();
       if (!text || text.trim() === '') {
-        return {};
+        return { detail: 'Server returned an empty response.', code: 'EMPTY_RESPONSE' };
       }
-      return JSON.parse(text);
+      const data = JSON.parse(text);
+      if (Array.isArray(data.detail)) {
+        // Format Pydantic validation errors nicely
+        const msg = data.detail.map(err => err.msg.replace('Value error, ', '')).join(' | ');
+        return { detail: msg, error: msg, code: 'VALIDATION_ERROR' };
+      }
+      return data;
     } catch (err) {
-      return { detail: 'Server error or invalid response format.' };
+      return { detail: 'Server error or invalid response format.', code: 'PARSING_ERROR' };
     }
   };
 
@@ -32,6 +39,7 @@ export default function AuthPage({ onLoginSuccess }) {
   const handleLogin = async (e) => {
     e.preventDefault();
     setErrorMsg('');
+    setErrorCode('');
     setLoading(true);
     try {
       const res = await fetch('/api/auth/login', {
@@ -40,7 +48,10 @@ export default function AuthPage({ onLoginSuccess }) {
         body: JSON.stringify({ username_or_email: username, password })
       });
       const data = await parseJsonResponse(res);
-      if (!res.ok) throw new Error(data.detail || 'Server error or invalid credentials.');
+      if (!res.ok) {
+        setErrorCode(data.code || 'INVALID_CREDENTIALS');
+        throw new Error(data.error || data.detail || 'Server error or invalid credentials.');
+      }
       onLoginSuccess(data.user, data.access_token);
     } catch (err) {
       setErrorMsg(err.message);
@@ -53,6 +64,7 @@ export default function AuthPage({ onLoginSuccess }) {
   const handleRegister = async (e) => {
     e.preventDefault();
     setErrorMsg('');
+    setErrorCode('');
     setLoading(true);
     try {
       const res = await fetch('/api/auth/register', {
@@ -61,7 +73,10 @@ export default function AuthPage({ onLoginSuccess }) {
         body: JSON.stringify({ username, email, password, full_name: fullName })
       });
       const data = await parseJsonResponse(res);
-      if (!res.ok) throw new Error(data.detail || 'Server error or registration failed.');
+      if (!res.ok) {
+        setErrorCode(data.code || 'REGISTRATION_FAILED');
+        throw new Error(data.error || data.detail || 'Server error or registration failed.');
+      }
       
       setDebugOtp(data.debug_otp || '');
       setShowOtpModal(true);
@@ -76,6 +91,7 @@ export default function AuthPage({ onLoginSuccess }) {
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
     setErrorMsg('');
+    setErrorCode('');
     setLoading(true);
     try {
       const res = await fetch('/api/auth/verify-otp', {
@@ -84,7 +100,10 @@ export default function AuthPage({ onLoginSuccess }) {
         body: JSON.stringify({ email, otp_code: otpCode })
       });
       const data = await parseJsonResponse(res);
-      if (!res.ok) throw new Error(data.detail || 'Server error or invalid OTP code.');
+      if (!res.ok) {
+        setErrorCode(data.code || 'INVALID_OTP');
+        throw new Error(data.error || data.detail || 'Server error or invalid OTP code.');
+      }
       
       setShowOtpModal(false);
       onLoginSuccess(data.user, data.access_token);
@@ -99,6 +118,7 @@ export default function AuthPage({ onLoginSuccess }) {
   const handleResetPassword = async (e) => {
     e.preventDefault();
     setErrorMsg('');
+    setErrorCode('');
     setLoading(true);
     try {
       const res = await fetch('/api/auth/reset-password', {
@@ -107,7 +127,10 @@ export default function AuthPage({ onLoginSuccess }) {
         body: JSON.stringify({ email, otp_code: otpCode, new_password: password })
       });
       const data = await parseJsonResponse(res);
-      if (!res.ok) throw new Error(data.detail || 'Server error or password reset failed.');
+      if (!res.ok) {
+        setErrorCode(data.code || 'RESET_FAILED');
+        throw new Error(data.error || data.detail || 'Server error or password reset failed.');
+      }
       alert('Password updated! You can now log in.');
       setMode('login');
     } catch (err) {
@@ -116,7 +139,6 @@ export default function AuthPage({ onLoginSuccess }) {
       setLoading(false);
     }
   };
-
 
   return (
     <div style={{
@@ -154,12 +176,19 @@ export default function AuthPage({ onLoginSuccess }) {
             background: 'rgba(244, 63, 94, 0.15)',
             border: '1px solid rgba(244, 63, 94, 0.4)',
             color: '#f43f5e',
-            padding: '0.75rem',
+            padding: '0.75rem 1rem',
             borderRadius: '10px',
             fontSize: '0.85rem',
-            marginBottom: '1.25rem'
+            marginBottom: '1.25rem',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '0.5rem'
           }}>
-            {errorMsg}
+            <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div>
+              {errorCode && <strong style={{ display: 'block', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>[{errorCode}]</strong>}
+              <span>{errorMsg}</span>
+            </div>
           </div>
         )}
 
@@ -203,14 +232,22 @@ export default function AuthPage({ onLoginSuccess }) {
             </div>
 
             <button type="submit" className="btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: '0.5rem' }} disabled={loading}>
-              {loading ? 'Authenticating...' : 'Sign In to Workspace'} <ArrowRight size={18} />
+              {loading ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" /> Authenticating...
+                </>
+              ) : (
+                <>
+                  Sign In to Workspace <ArrowRight size={18} />
+                </>
+              )}
             </button>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginTop: '0.5rem' }}>
-              <button type="button" onClick={() => setMode('forgot')} style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', cursor: 'pointer' }}>
+              <button type="button" onClick={() => { setMode('forgot'); setErrorMsg(''); }} style={{ background: 'none', border: 'none', color: 'var(--accent-cyan)', cursor: 'pointer' }}>
                 Forgot password?
               </button>
-              <button type="button" onClick={() => setMode('register')} style={{ background: 'none', border: 'none', color: 'var(--accent-indigo)', cursor: 'pointer', fontWeight: 600 }}>
+              <button type="button" onClick={() => { setMode('register'); setErrorMsg(''); }} style={{ background: 'none', border: 'none', color: 'var(--accent-indigo)', cursor: 'pointer', fontWeight: 600 }}>
                 Create Local Account
               </button>
             </div>
@@ -222,7 +259,7 @@ export default function AuthPage({ onLoginSuccess }) {
           <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <div>
               <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem', display: 'block' }}>Full Name</label>
-              <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)} className="glass-input" placeholder="Alex Mercer" />
+              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className="glass-input" placeholder="Alex Mercer" />
             </div>
             <div>
               <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem', display: 'block' }}>Username</label>
@@ -234,14 +271,22 @@ export default function AuthPage({ onLoginSuccess }) {
             </div>
             <div>
               <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem', display: 'block' }}>Password</label>
-              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="glass-input" placeholder="••••••••••••" />
+              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="glass-input" placeholder="Min 8 chars (1 uppercase, 1 number, 1 special)" />
             </div>
 
             <button type="submit" className="btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: '0.5rem' }} disabled={loading}>
-              {loading ? 'Dispatching OTP...' : 'Register & Verify OTP'} <Sparkles size={18} />
+              {loading ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" /> Dispatching OTP...
+                </>
+              ) : (
+                <>
+                  Register & Verify OTP <Sparkles size={18} />
+                </>
+              )}
             </button>
 
-            <button type="button" onClick={() => setMode('login')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.82rem', marginTop: '0.5rem' }}>
+            <button type="button" onClick={() => { setMode('login'); setErrorMsg(''); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.82rem', marginTop: '0.5rem' }}>
               Already have an account? Sign In
             </button>
           </form>
@@ -265,10 +310,16 @@ export default function AuthPage({ onLoginSuccess }) {
             </div>
 
             <button type="submit" className="btn-primary" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
-              Reset Password
+              {loading ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" /> Resetting Password...
+                </>
+              ) : (
+                'Reset Password'
+              )}
             </button>
 
-            <button type="button" onClick={() => setMode('login')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.82rem' }}>
+            <button type="button" onClick={() => { setMode('login'); setErrorMsg(''); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.82rem' }}>
               Back to Login
             </button>
           </form>
@@ -332,7 +383,15 @@ export default function AuthPage({ onLoginSuccess }) {
                 placeholder="000000"
               />
               <button type="submit" className="btn-primary" style={{ justifyContent: 'center' }} disabled={loading}>
-                {loading ? 'Verifying...' : 'Confirm OTP'} <CheckCircle2 size={18} />
+                {loading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" /> Verifying...
+                  </>
+                ) : (
+                  <>
+                    Confirm OTP <CheckCircle2 size={18} />
+                  </>
+                )}
               </button>
             </form>
           </div>

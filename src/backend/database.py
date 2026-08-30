@@ -1,0 +1,88 @@
+import sqlite3
+import os
+from typing import Generator
+
+DB_PATH = os.environ.get("DATABASE_PATH", "linkedin_agent.db")
+
+def get_db_connection() -> sqlite3.Connection:
+    """Creates a database connection with dict-like row access."""
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    """Initializes the SQLite database tables if they do not exist."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Users table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        hashed_password TEXT NOT NULL,
+        full_name TEXT,
+        is_verified INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # OTP table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS otps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_email TEXT NOT NULL,
+        otp_code TEXT NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        is_used INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # Resumes table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS resumes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        content_json TEXT NOT NULL,
+        is_default INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+    """)
+
+    # Job applications table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS job_applications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        job_title TEXT NOT NULL,
+        company TEXT NOT NULL,
+        location TEXT,
+        job_url TEXT NOT NULL,
+        status TEXT DEFAULT 'APPLIED',
+        match_score REAL DEFAULT 0.0,
+        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+    """)
+
+    # Agent execution logs
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS agent_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        level TEXT NOT NULL,
+        message TEXT NOT NULL,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    conn.commit()
+    conn.close()
+
+if __name__ == "__main__":
+    init_db()
+    print("Database initialized successfully.")

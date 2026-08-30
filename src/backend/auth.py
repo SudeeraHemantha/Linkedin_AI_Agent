@@ -95,49 +95,57 @@ import sqlite3
 
 @router.post("/register")
 def register_user(payload: UserRegisterSchema):
-    if not payload.username or not payload.email or not payload.password:
-        raise HTTPException(status_code=400, detail="Username, Email, and Password are required.")
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT id FROM users WHERE username = ? OR email = ?", (payload.username.strip(), payload.email.strip().lower()))
-    if cursor.fetchone():
-        conn.close()
-        raise HTTPException(status_code=400, detail="Username or Email already registered.")
-
-    hashed_pw = hash_password(payload.password)
-    clean_email = payload.email.strip().lower()
-    clean_username = payload.username.strip()
-
     try:
+        if not payload.username or not payload.email or not payload.password:
+            raise HTTPException(status_code=400, detail="Username, Email, and Password are required.")
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT id FROM users WHERE username = ? OR email = ?", (payload.username.strip(), payload.email.strip().lower()))
+        if cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=400, detail="Username or Email already registered.")
+
+        hashed_pw = hash_password(payload.password)
+        clean_email = payload.email.strip().lower()
+        clean_username = payload.username.strip()
+
+        try:
+            cursor.execute(
+                "INSERT INTO users (username, email, hashed_password, full_name, is_verified) VALUES (?, ?, ?, ?, 0)",
+                (clean_username, clean_email, hashed_pw, payload.full_name or clean_username)
+            )
+        except sqlite3.IntegrityError as db_err:
+            conn.close()
+            print(f"[REGISTRATION DB INTEGRITY ERROR] {db_err}")
+            raise HTTPException(status_code=400, detail="Username or Email already registered.")
+
+        # Generate enterprise OTP (valid for strict 5 minutes)
+        otp_code = generate_otp()
+        expires_at = (datetime.utcnow() + timedelta(minutes=OTP_TTL_MINUTES)).isoformat()
         cursor.execute(
-            "INSERT INTO users (username, email, hashed_password, full_name, is_verified) VALUES (?, ?, ?, ?, 0)",
-            (clean_username, clean_email, hashed_pw, payload.full_name or clean_username)
+            "INSERT INTO otps (user_email, otp_code, expires_at, is_used) VALUES (?, ?, ?, 0)",
+            (clean_email, otp_code, expires_at)
         )
-    except sqlite3.IntegrityError:
+        
+        conn.commit()
         conn.close()
-        raise HTTPException(status_code=400, detail="Username or Email already registered.")
 
-    # Generate enterprise OTP (valid for strict 5 minutes)
-    otp_code = generate_otp()
-    expires_at = (datetime.utcnow() + timedelta(minutes=OTP_TTL_MINUTES)).isoformat()
-    cursor.execute(
-        "INSERT INTO otps (user_email, otp_code, expires_at, is_used) VALUES (?, ?, ?, 0)",
-        (clean_email, otp_code, expires_at)
-    )
-    
-    conn.commit()
-    conn.close()
+        print(f"[ENTERPRISE OTP DISPATCH] 5-min OTP for {clean_email}: {otp_code}")
 
+        return {
+            "message": "User registered successfully. Verification 2FA OTP dispatched.",
+            "email": clean_email,
+            "debug_otp": otp_code
+        }
+    except HTTPException as http_ex:
+        print(f"[REGISTRATION HTTP ERROR {http_ex.status_code}] {http_ex.detail}")
+        raise http_ex
+    except Exception as exc:
+        print(f"[REGISTRATION UNHANDLED ERROR] {exc}")
+        raise HTTPException(status_code=500, detail=f"Registration server error: {str(exc)}")
 
-    print(f"[ENTERPRISE OTP DISPATCH] 5-min OTP for {clean_email}: {otp_code}")
-
-    return {
-        "message": "User registered successfully. Verification 2FA OTP dispatched.",
-        "email": clean_email,
-        "debug_otp": otp_code
-    }
 
 @router.post("/verify-otp")
 def verify_otp(payload: VerifyOTPSchema):

@@ -72,15 +72,29 @@ async def launch_stealth_context(
     user_data_dir: Optional[str] = None,
     headless: bool = False
 ):
+    r"""
+    Launches a Playwright browser context using the user's authentic local Google Chrome
+    user profile directory (%LOCALAPPDATA%\Google\Chrome\User Data) to inherit active
+    live browser sessions, cookies, and login tokens.
     """
-    Launches a Playwright browser context using a persistent Chrome profile session
-    or fallback clean context with randomized viewport & authentic stealth injection.
-    """
+
+    local_appdata = os.environ.get("LOCALAPPDATA", os.path.join(os.path.expanduser("~"), "AppData", "Local"))
+    authentic_chrome_dir = os.path.join(local_appdata, "Google", "Chrome", "User Data")
     appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
-    default_profile_dir = os.path.join(appdata, "LinkedInAgent", "chrome_user_data")
-    chrome_profile_path = user_data_dir or os.environ.get("CHROME_PROFILE_PATH", default_profile_dir)
-    
-    os.makedirs(chrome_profile_path, exist_ok=True)
+    fallback_profile_dir = os.path.join(appdata, "LinkedInAgent", "chrome_user_data")
+
+    if user_data_dir:
+        chrome_profile_path = user_data_dir
+    elif os.environ.get("CHROME_PROFILE_PATH"):
+        chrome_profile_path = os.environ.get("CHROME_PROFILE_PATH")
+    elif os.path.exists(authentic_chrome_dir):
+        chrome_profile_path = authentic_chrome_dir
+    else:
+        chrome_profile_path = fallback_profile_dir
+        os.makedirs(chrome_profile_path, exist_ok=True)
+
+    print(f"[STEALTH BROWSER CONTEXT] Utilizing Chrome Profile Directory: {chrome_profile_path}")
+
     args = get_stealth_browser_args()
     
     selected_viewport = random.choice(VIEWPORTS)

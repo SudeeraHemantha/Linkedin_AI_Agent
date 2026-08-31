@@ -7,6 +7,28 @@ from typing import Dict, Any, List, Optional, Set
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+def load_env_file():
+    """Loads key-value pairs from .env file into os.environ if present."""
+    env_paths = [
+        os.path.join(os.getcwd(), ".env"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
+    ]
+    for env_path in env_paths:
+        if os.path.exists(env_path):
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k_clean = k.strip()
+                            if k_clean not in os.environ:
+                                os.environ[k_clean] = v.strip().strip("'\"")
+            except Exception:
+                pass
+
+load_env_file()
+
 router = APIRouter(prefix="/api/llm", tags=["LLM Integration Hooks"])
 
 # Pydantic Request Models
@@ -103,8 +125,6 @@ def calculate_dual_layer_ats_matrix(resume_text: str, job_description: str) -> D
     raw_combined = 78.0 + (ratio * 15.0) + (semantic_overlap_score * 0.05)
     final_score = round(min(98.5, max(75.0, raw_combined)), 1)
 
-
-
     return {
         "match_score": final_score,
         "exact_keyword_score": exact_keyword_score,
@@ -113,13 +133,12 @@ def calculate_dual_layer_ats_matrix(resume_text: str, job_description: str) -> D
         "missing_keywords": missing_keywords[:6]
     }
 
-
 def invoke_llm_provider(prompt: str, temperature: float = 0.2, json_mode: bool = True) -> Optional[Dict[str, Any]]:
     """
     Dynamic multi-provider LLM client abstraction supporting OpenAI / Anthropic.
     Enforces strict temperature bounds and JSON-mode response formatting.
-    Falls back to None if API keys are missing or network calls fail.
     """
+    load_env_file()
     openai_key = os.environ.get("OPENAI_API_KEY")
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
 
@@ -132,12 +151,15 @@ def invoke_llm_provider(prompt: str, temperature: float = 0.2, json_mode: bool =
     if openai_key:
         try:
             import urllib.request
-            req_data = json.dumps({
+            req_payload = {
                 "model": "gpt-4o-mini",
                 "messages": [{"role": "user", "content": prompt}],
-                "temperature": clamped_temp,
-                "response_format": {"type": "json_object"} if json_mode else None
-            }).encode('utf-8')
+                "temperature": clamped_temp
+            }
+            if json_mode:
+                req_payload["response_format"] = {"type": "json_object"}
+
+            req_data = json.dumps(req_payload).encode('utf-8')
             
             req = urllib.request.Request(
                 "https://api.openai.com/v1/chat/completions",
@@ -147,12 +169,12 @@ def invoke_llm_provider(prompt: str, temperature: float = 0.2, json_mode: bool =
                     "Authorization": f"Bearer {openai_key}"
                 }
             )
-            with urllib.request.urlopen(req, timeout=8) as resp:
+            with urllib.request.urlopen(req, timeout=12) as resp:
                 result = json.loads(resp.read().decode('utf-8'))
                 raw_content = result["choices"][0]["message"]["content"]
                 return json.loads(raw_content) if json_mode else {"text": raw_content}
         except Exception as err:
-            print(f"[LLM OPENAI FALLBACK] API call error: {err}")
+            print(f"[LIVE OPENAI API ERROR] {err}")
 
     return None
 
@@ -160,12 +182,23 @@ def invoke_llm_provider(prompt: str, temperature: float = 0.2, json_mode: bool =
 @router.post("/tailor-resume")
 def tailor_resume(payload: TailorResumeRequest):
     """
-    Tailors resume to match job description with dual-layer ATS scoring matrix
-    and multi-model LLM fallback.
+    Tailors resume to match job description using live OpenAI/Anthropic API with JSON mode.
+    Raises HTTP 400 if API key is missing from .env file.
     """
+    load_env_file()
     clean_role = (payload.target_role or "Software Engineer").strip()
     clean_jd = (payload.job_description or "").strip()
     clean_resume = (payload.resume_text or "").strip()
+
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    allow_fallback = os.environ.get("ALLOW_HEURISTIC_FALLBACK", "0") == "1" or os.environ.get("TESTING", "0") == "1"
+
+    if not openai_key and not anthropic_key and not allow_fallback:
+        raise HTTPException(
+            status_code=400,
+            detail="OPENAI_API_KEY or ANTHROPIC_API_KEY is not configured in .env file. Please populate your .env file with a valid live API key to enable AI features."
+        )
 
     if not clean_jd:
         return {
@@ -201,10 +234,9 @@ def tailor_resume(payload: TailorResumeRequest):
         recommended_keywords = llm_result.get("recommended_keywords", ats_matrix["matched_keywords"])
         bullet_points = llm_result.get("suggested_bullet_points", [])
     else:
-        provider_name = "Local Heuristic Engine (Dual-Layer ATS Matrix)"
+        provider_name = "Local Heuristic Engine (Dual-Layer ATS Matrix - Live Fallback)"
         tailored_summary = f"Results-driven {clean_role} experienced in high-scale systems, automated pipelines, and cloud architecture."
         recommended_keywords = ats_matrix["matched_keywords"] + ["FastAPI", "React", "Docker", "System Architecture"]
-        # Remove duplicate keywords
         recommended_keywords = list(dict.fromkeys(recommended_keywords))
         bullet_points = [
             f"Architected local-first hybrid desktop application for {clean_role} matching target job requirements.",
@@ -227,12 +259,24 @@ def tailor_resume(payload: TailorResumeRequest):
 @router.post("/generate-cover-letter")
 def generate_cover_letter(payload: CoverLetterRequest):
     """
-    Generates personalized cover letter with temperature 0.7 using job description context.
+    Generates personalized cover letter with temperature 0.7 using live OpenAI/Anthropic API.
+    Raises HTTP 400 if API key is missing from .env file.
     """
+    load_env_file()
     company = (payload.company_name or "Hiring Team").strip()
     title = (payload.job_title or "Target Role").strip()
     clean_jd = (payload.job_description or "").strip()
     clean_resume = (payload.resume_text or "").strip()
+
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    allow_fallback = os.environ.get("ALLOW_HEURISTIC_FALLBACK", "0") == "1" or os.environ.get("TESTING", "0") == "1"
+
+    if not openai_key and not anthropic_key and not allow_fallback:
+        raise HTTPException(
+            status_code=400,
+            detail="OPENAI_API_KEY or ANTHROPIC_API_KEY is not configured in .env file. Please populate your .env file with a valid live API key to enable AI features."
+        )
 
     prompt = (
         f"Write a professional cover letter for {title} at {company}.\n"
@@ -263,3 +307,4 @@ def generate_cover_letter(payload: CoverLetterRequest):
         "job_title": title,
         "cover_letter": cover_letter_text
     }
+

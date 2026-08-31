@@ -70,8 +70,9 @@ def get_stealth_init_script() -> str:
 async def launch_stealth_context(
     playwright_instance: Any,
     user_data_dir: Optional[str] = None,
-    headless: bool = False
+    headless: bool = True
 ):
+
     r"""
     Launches a Playwright browser context using the user's authentic local Google Chrome
     user profile directory (%LOCALAPPDATA%\Google\Chrome\User Data) to inherit active

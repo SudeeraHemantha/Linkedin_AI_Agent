@@ -7,6 +7,24 @@ from typing import Dict, Any, List, Optional, Set
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+PLACEHOLDER_KEYS = {
+    "your_groq_api_key_here",
+    "your_openai_api_key_here",
+    "your_anthropic_api_key_here",
+    "",
+    "none",
+    "null"
+}
+
+def clean_api_key(key_val: Optional[str]) -> Optional[str]:
+    """Filters out empty values and placeholder strings from API keys."""
+    if not key_val:
+        return None
+    val = key_val.strip().strip("'\"")
+    if val.lower() in PLACEHOLDER_KEYS or val.startswith("your_"):
+        return None
+    return val
+
 def load_env_file():
     """Loads key-value pairs from .env file into os.environ if present."""
     env_paths = [
@@ -22,8 +40,10 @@ def load_env_file():
                         if line and not line.startswith("#") and "=" in line:
                             k, v = line.split("=", 1)
                             k_clean = k.strip()
-                            if k_clean not in os.environ:
-                                os.environ[k_clean] = v.strip().strip("'\"")
+                            v_clean = v.strip().strip("'\"")
+                            # Always update if empty or placeholder
+                            if k_clean not in os.environ or os.environ[k_clean].startswith("your_"):
+                                os.environ[k_clean] = v_clean
             except Exception:
                 pass
 
@@ -133,15 +153,15 @@ def calculate_dual_layer_ats_matrix(resume_text: str, job_description: str) -> D
         "missing_keywords": missing_keywords[:6]
     }
 
-def invoke_llm_provider(prompt: str, temperature: float = 0.2, json_mode: bool = True) -> Optional[Dict[str, Any]]:
+def invoke_llm_provider(prompt: str, temperature: float = 0.3, json_mode: bool = True) -> Optional[Dict[str, Any]]:
     """
     Dynamic multi-provider LLM client abstraction supporting Groq, OpenAI, and Anthropic.
     Enforces strict temperature bounds and JSON-mode response formatting.
     """
     load_env_file()
-    groq_key = os.environ.get("GROQ_API_KEY")
-    openai_key = os.environ.get("OPENAI_API_KEY")
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    groq_key = clean_api_key(os.environ.get("GROQ_API_KEY"))
+    openai_key = clean_api_key(os.environ.get("OPENAI_API_KEY"))
+    anthropic_key = clean_api_key(os.environ.get("ANTHROPIC_API_KEY"))
 
     if not groq_key and not openai_key and not anthropic_key:
         return None
@@ -151,33 +171,60 @@ def invoke_llm_provider(prompt: str, temperature: float = 0.2, json_mode: bool =
 
     # 1. High-Speed Groq Developer API Call
     if groq_key:
-        try:
-            import urllib.request
-            req_payload = {
-                "model": "llama-3.3-70b-versatile",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": clamped_temp
-            }
-            if json_mode:
-                req_payload["response_format"] = {"type": "json_object"}
+        groq_models = ["groq/compound", "openai/gpt-oss-120b", "llama-3.3-70b-versatile"]
 
-            req_data = json.dumps(req_payload).encode('utf-8')
-            req = urllib.request.Request(
-                "https://api.groq.com/openai/v1/chat/completions",
-                data=req_data,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {groq_key}"
+        # Attempt official groq SDK if installed
+        try:
+            from groq import Groq
+            client = Groq(api_key=groq_key)
+            for model_name in groq_models:
+                try:
+                    completion = client.chat.completions.create(
+                        model=model_name,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=clamped_temp,
+                        response_format={"type": "json_object"} if json_mode else None
+                    )
+                    raw_content = completion.choices[0].message.content
+                    res_obj = json.loads(raw_content) if json_mode else {"text": raw_content}
+                    res_obj["_provider"] = f"Live Groq ({model_name})"
+                    return res_obj
+                except Exception as m_err:
+                    print(f"[GROQ SDK MODEL NOTICE] Model {model_name} error: {m_err}")
+        except ImportError:
+            pass
+
+        # Fallback to direct HTTP POST request with valid headers
+        for model_name in groq_models:
+            try:
+                import urllib.request
+                req_payload = {
+                    "model": model_name,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": clamped_temp
                 }
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                result = json.loads(resp.read().decode('utf-8'))
-                raw_content = result["choices"][0]["message"]["content"]
-                res_obj = json.loads(raw_content) if json_mode else {"text": raw_content}
-                res_obj["_provider"] = "Live Groq LLaMA-3.3-70b-versatile"
-                return res_obj
-        except Exception as err:
-            print(f"[LIVE GROQ API ERROR] {err}. Attempting fallback providers...")
+                if json_mode:
+                    req_payload["response_format"] = {"type": "json_object"}
+
+                req_data = json.dumps(req_payload).encode('utf-8')
+                req = urllib.request.Request(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    data=req_data,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {groq_key}",
+                        "User-Agent": "LinkedInAgent/1.0.0 (Windows NT 10.0)"
+                    }
+                )
+                with urllib.request.urlopen(req, timeout=12) as resp:
+                    result = json.loads(resp.read().decode('utf-8'))
+                    raw_content = result["choices"][0]["message"]["content"]
+                    res_obj = json.loads(raw_content) if json_mode else {"text": raw_content}
+                    res_obj["_provider"] = f"Live Groq ({model_name})"
+                    return res_obj
+            except Exception as err:
+                print(f"[LIVE GROQ API ERROR] Model {model_name} error: {err}")
+
 
     # 2. OpenAI API Fallback
     if openai_key:
@@ -197,10 +244,11 @@ def invoke_llm_provider(prompt: str, temperature: float = 0.2, json_mode: bool =
                 data=req_data,
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {openai_key}"
+                    "Authorization": f"Bearer {openai_key}",
+                    "User-Agent": "LinkedInAgent/1.0.0 (Windows NT 10.0)"
                 }
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=12) as resp:
                 result = json.loads(resp.read().decode('utf-8'))
                 raw_content = result["choices"][0]["message"]["content"]
                 res_obj = json.loads(raw_content) if json_mode else {"text": raw_content}
@@ -223,9 +271,9 @@ def tailor_resume(payload: TailorResumeRequest):
     clean_jd = (payload.job_description or "").strip()
     clean_resume = (payload.resume_text or "").strip()
 
-    groq_key = os.environ.get("GROQ_API_KEY")
-    openai_key = os.environ.get("OPENAI_API_KEY")
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    groq_key = clean_api_key(os.environ.get("GROQ_API_KEY"))
+    openai_key = clean_api_key(os.environ.get("OPENAI_API_KEY"))
+    anthropic_key = clean_api_key(os.environ.get("ANTHROPIC_API_KEY"))
     allow_fallback = os.environ.get("ALLOW_HEURISTIC_FALLBACK", "0") == "1" or os.environ.get("TESTING", "0") == "1"
 
     if not groq_key and not openai_key and not anthropic_key and not allow_fallback:
@@ -253,14 +301,14 @@ def tailor_resume(payload: TailorResumeRequest):
     # Calculate dual-layer ATS matrix
     ats_matrix = calculate_dual_layer_ats_matrix(clean_resume, clean_jd)
 
-    # Attempt live LLM invocation (temperature 0.2 for precise resume extraction)
+    # Attempt live LLM invocation (temperature 0.3 for precise resume extraction)
     prompt = (
         f"Tailor resume for target role '{clean_role}'.\n"
         f"Resume: {clean_resume[:1000]}\n"
         f"Job Description: {clean_jd[:1000]}\n"
         f"Respond in JSON with keys: 'tailored_summary', 'suggested_bullet_points', 'recommended_keywords'."
     )
-    llm_result = invoke_llm_provider(prompt, temperature=0.2, json_mode=True)
+    llm_result = invoke_llm_provider(prompt, temperature=0.3, json_mode=True)
 
     if llm_result and "suggested_bullet_points" in llm_result:
         provider_name = llm_result.get("_provider", "Live Groq LLaMA-3.3-70b-versatile")
@@ -302,9 +350,9 @@ def generate_cover_letter(payload: CoverLetterRequest):
     clean_jd = (payload.job_description or "").strip()
     clean_resume = (payload.resume_text or "").strip()
 
-    groq_key = os.environ.get("GROQ_API_KEY")
-    openai_key = os.environ.get("OPENAI_API_KEY")
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    groq_key = clean_api_key(os.environ.get("GROQ_API_KEY"))
+    openai_key = clean_api_key(os.environ.get("OPENAI_API_KEY"))
+    anthropic_key = clean_api_key(os.environ.get("ANTHROPIC_API_KEY"))
     allow_fallback = os.environ.get("ALLOW_HEURISTIC_FALLBACK", "0") == "1" or os.environ.get("TESTING", "0") == "1"
 
     if not groq_key and not openai_key and not anthropic_key and not allow_fallback:

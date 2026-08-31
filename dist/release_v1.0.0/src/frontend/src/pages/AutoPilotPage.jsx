@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Pause, Bot, ShieldCheck, Activity, Terminal, CheckCircle2, Link, AlertCircle, Loader2, Rocket } from 'lucide-react';
+import HybridWorkspaceView from '../components/HybridWorkspaceView';
+
 
 export default function AutoPilotPage() {
   const [isRunning, setIsRunning] = useState(false);
@@ -313,6 +315,10 @@ export default function AutoPilotPage() {
           </div>
         </div>
       </div>
+
+      {/* Hybrid Workspace Viewport Bridge */}
+      <HybridWorkspaceView />
     </div>
   );
 }
+

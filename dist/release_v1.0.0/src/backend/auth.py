@@ -204,15 +204,11 @@ def generate_otp() -> str:
     return f"{random.randint(100000, 999999)}"
 
 # Standardized Error Helper
-def make_error_response(status_code: int, detail: str, code: str) -> JSONResponse:
+def make_error_response(status_code: int, detail: str, code: str):
     print(f"[AUTH ERROR {status_code}] [{code}]: {detail}")
-    return JSONResponse(
+    raise HTTPException(
         status_code=status_code,
-        content={
-            "detail": detail,
-            "error": detail,
-            "code": code
-        }
+        detail={"detail": detail, "error": detail, "code": code, "status": "error"}
     )
 
 # API Endpoints with Transactional Integrity
@@ -227,7 +223,7 @@ def register_user(payload: UserRegisterSchema):
         cursor.execute("SELECT id FROM users WHERE username = ? OR email = ?", (clean_username, clean_email))
         if cursor.fetchone():
             conn.close()
-            return make_error_response(
+            make_error_response(
                 status_code=400,
                 detail="User with this username or email already exists.",
                 code="DUPLICATE_USER"
@@ -244,7 +240,7 @@ def register_user(payload: UserRegisterSchema):
             conn.rollback()
             conn.close()
             print(f"[REGISTRATION DB TRANSACTION ROLLBACK] IntegrityError: {db_err}")
-            return make_error_response(
+            make_error_response(
                 status_code=400,
                 detail="User already exists in database.",
                 code="DUPLICATE_USER"
@@ -267,16 +263,19 @@ def register_user(payload: UserRegisterSchema):
         print(f"[ENTERPRISE OTP DISPATCH] 5-min OTP for {clean_email}: {otp_code}")
 
         return {
+            "status": "success",
             "message": "User registered successfully. Verification 2FA OTP dispatched.",
             "email": clean_email,
             "debug_otp": otp_code
         }
 
+    except HTTPException:
+        raise
     except Exception as exc:
         conn.rollback()
         conn.close()
         print(f"[REGISTRATION SYSTEM ERROR] {exc}")
-        return make_error_response(
+        make_error_response(
             status_code=500,
             detail=f"Registration system error: {str(exc)}",
             code="SERVER_ERROR"
@@ -298,18 +297,18 @@ def verify_otp(payload: VerifyOTPSchema):
 
         if not row:
             conn.close()
-            return make_error_response(status_code=400, detail="Invalid OTP code.", code="INVALID_OTP")
+            make_error_response(status_code=400, detail="Invalid OTP code.", code="INVALID_OTP")
 
         if row["is_used"] == 1:
             conn.close()
-            return make_error_response(status_code=400, detail="OTP code has already been used.", code="OTP_ALREADY_USED")
+            make_error_response(status_code=400, detail="OTP code has already been used.", code="OTP_ALREADY_USED")
 
         # Strict TTL Expiration Check
         try:
             expiry_dt = datetime.fromisoformat(row["expires_at"])
             if expiry_dt < datetime.utcnow():
                 conn.close()
-                return make_error_response(status_code=400, detail="OTP code has expired (5-minute TTL). Please request a new code.", code="OTP_EXPIRED")
+                make_error_response(status_code=400, detail="OTP code has expired (5-minute TTL). Please request a new code.", code="OTP_EXPIRED")
         except (ValueError, TypeError):
             pass
 
@@ -328,18 +327,21 @@ def verify_otp(payload: VerifyOTPSchema):
         refresh_token = create_refresh_token({"sub": user_row["username"], "user_id": user_row["id"]})
 
         return {
+            "status": "success",
             "message": "Account verified successfully.",
             "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
             "user": user_row
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         conn.rollback()
         conn.close()
-        return make_error_response(status_code=500, detail=f"OTP verification system error: {str(exc)}", code="SERVER_ERROR")
+        make_error_response(status_code=500, detail=f"OTP verification system error: {str(exc)}", code="SERVER_ERROR")
 
-@router.post("/login", response_model=TokenResponseSchema)
+@router.post("/login")
 def login(payload: LoginSchema):
     conn = get_db_connection()
     try:
@@ -354,7 +356,7 @@ def login(payload: LoginSchema):
         conn.close()
 
         if not user_row or not verify_password(payload.password, user_row["hashed_password"]):
-            return make_error_response(status_code=401, detail="Invalid username or password.", code="INVALID_CREDENTIALS")
+            make_error_response(status_code=401, detail="Invalid username or password.", code="INVALID_CREDENTIALS")
 
         user = {
             "id": user_row["id"],
@@ -368,14 +370,17 @@ def login(payload: LoginSchema):
         refresh_token = create_refresh_token({"sub": user["username"], "user_id": user["id"]})
 
         return {
+            "status": "success",
             "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
             "user": user
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         conn.close()
-        return make_error_response(status_code=500, detail=f"Login system error: {str(exc)}", code="SERVER_ERROR")
+        make_error_response(status_code=500, detail=f"Login system error: {str(exc)}", code="SERVER_ERROR")
 
 @router.post("/request-reset-otp")
 def request_reset_otp(email: str):
@@ -387,7 +392,7 @@ def request_reset_otp(email: str):
         cursor.execute("SELECT id FROM users WHERE LOWER(email) = ?", (clean_email,))
         if not cursor.fetchone():
             conn.close()
-            return make_error_response(status_code=404, detail="Email not registered.", code="EMAIL_NOT_FOUND")
+            make_error_response(status_code=404, detail="Email not registered.", code="EMAIL_NOT_FOUND")
 
         otp_code = generate_otp()
         expires_at = (datetime.utcnow() + timedelta(minutes=OTP_TTL_MINUTES)).isoformat()
@@ -403,12 +408,18 @@ def request_reset_otp(email: str):
 
         print(f"[RESET OTP DISPATCH] Password Reset 5-min OTP for {clean_email}: {otp_code}")
 
-        return {"message": "Password reset OTP sent to email.", "debug_otp": otp_code}
+        return {
+            "status": "success",
+            "message": "Password reset OTP sent to email.",
+            "debug_otp": otp_code
+        }
 
+    except HTTPException:
+        raise
     except Exception as exc:
         conn.rollback()
         conn.close()
-        return make_error_response(status_code=500, detail=f"Reset OTP error: {str(exc)}", code="SERVER_ERROR")
+        make_error_response(status_code=500, detail=f"Reset OTP error: {str(exc)}", code="SERVER_ERROR")
 
 @router.post("/reset-password")
 def reset_password(payload: PasswordResetSchema):
@@ -425,13 +436,13 @@ def reset_password(payload: PasswordResetSchema):
 
         if not row or row["is_used"] == 1:
             conn.close()
-            return make_error_response(status_code=400, detail="Invalid or expired OTP code.", code="INVALID_OTP")
+            make_error_response(status_code=400, detail="Invalid or expired OTP code.", code="INVALID_OTP")
 
         try:
             expiry_dt = datetime.fromisoformat(row["expires_at"])
             if expiry_dt < datetime.utcnow():
                 conn.close()
-                return make_error_response(status_code=400, detail="Password reset OTP code has expired.", code="OTP_EXPIRED")
+                make_error_response(status_code=400, detail="Password reset OTP code has expired.", code="OTP_EXPIRED")
         except (ValueError, TypeError):
             pass
 
@@ -442,8 +453,14 @@ def reset_password(payload: PasswordResetSchema):
         conn.commit()
         conn.close()
 
-        return {"message": "Password updated successfully. You can now login."}
+        return {
+            "status": "success",
+            "message": "Password updated successfully. You can now login."
+        }
+    except HTTPException:
+        raise
     except Exception as exc:
         conn.rollback()
         conn.close()
-        return make_error_response(status_code=500, detail=f"Password reset system error: {str(exc)}", code="SERVER_ERROR")
+        make_error_response(status_code=500, detail=f"Password reset system error: {str(exc)}", code="SERVER_ERROR")
+

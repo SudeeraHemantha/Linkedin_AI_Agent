@@ -171,59 +171,30 @@ async def connect_linkedin_account():
     """
     return await launch_headed_login_bridge(timeout_seconds=45)
 
-class LaunchWorkspacePayload(BaseModel):
-    target_url: Optional[str] = "https://www.linkedin.com/feed/"
+import webbrowser
 
 @router.post("/launch-workspace")
 async def launch_linkedin_workspace(payload: Optional[Dict[str, Any]] = None):
     """
-    Spawns a non-headless Playwright Chromium session loaded with stored LinkedIn cookies.
+    Instantly launches native OS desktop browser window to target URL without blocking main server thread.
     """
     if not payload:
         payload = {}
     target_url = payload.get("target_url") or "https://www.linkedin.com/feed/"
-    cookie_path = get_cookies_file_path()
 
     try:
-        from playwright.async_api import async_playwright
-    except ImportError:
-        return JSONResponse(status_code=500, content={"status": "error", "message": "Playwright is not installed."})
+        # Instantly tells the Windows Desktop shell to open default browser
+        opened = webbrowser.open(target_url)
+        print(f"[NATIVE WORKSPACE OS LAUNCH] Triggered webbrowser.open({target_url}) -> Success: {opened}")
+        return {
+            "status": "success",
+            "message": f"Opened {target_url} successfully.",
+            "target_url": target_url
+        }
+    except Exception as e:
+        print(f"[NATIVE WORKSPACE LAUNCH ERROR] {e}")
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
-    async def _launch():
-        try:
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(
-                    headless=False,
-                    args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
-                )
-                context = await browser.new_context(
-                    viewport={"width": 1280, "height": 850},
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-                )
-
-                if os.path.exists(cookie_path):
-                    try:
-                        with open(cookie_path, "r", encoding="utf-8") as f:
-                            cookies = json.load(f)
-                            if cookies:
-                                await context.add_cookies(cookies)
-                    except Exception as c_err:
-                        print(f"[WORKSPACE COOKIE INJECT NOTICE] {c_err}")
-
-                page = await context.new_page()
-                print(f"[WORKSPACE LAUNCH] Opening native window to {target_url}")
-                await page.goto(target_url, wait_until="domcontentloaded")
-                await asyncio.sleep(600)
-                await browser.close()
-        except Exception as err:
-            print(f"[WORKSPACE LAUNCH NOTICE] {err}")
-
-    asyncio.create_task(_launch())
-    return {
-        "status": "success",
-        "message": f"Workspace launched at {target_url}",
-        "target_url": target_url
-    }
 
 
 

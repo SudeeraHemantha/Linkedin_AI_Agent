@@ -10,17 +10,25 @@ export default function HybridWorkspaceView() {
     setActiveUrl(url);
 
     try {
-      await fetch('http://127.0.0.1:8000/api/linkedin/launch-workspace', {
+      const res = await fetch('http://127.0.0.1:8000/api/linkedin/launch-workspace', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ target_url: url })
       });
+      const data = await res.json();
+      if (data && data.status === "success") {
+        console.log(`[SUCCESS] Launched native workspace window at ${url}`);
+      } else {
+        window.open(url, '_blank');
+      }
     } catch (err) {
+      console.error(`[ERROR] Network error launching workspace: ${err.message}`);
       window.open(url, '_blank');
     } finally {
-      setTimeout(() => setIsLaunching(false), 1200);
+      setIsLaunching(false);
     }
   };
+
 
   return (
     <div style={{

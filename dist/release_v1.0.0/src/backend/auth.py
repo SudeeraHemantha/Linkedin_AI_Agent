@@ -360,11 +360,32 @@ def verify_otp(payload: VerifyOTPSchema):
         make_error_response(status_code=500, detail=f"OTP verification system error: {str(exc)}", code="SERVER_ERROR")
 
 @router.post("/login")
-def login(payload: LoginSchema):
-    conn = get_db_connection()
+async def login(request: Request):
+    """
+    Safely parses incoming login payloads (JSON or Form data),
+    validates credentials against SQLite database, and returns JWT tokens + user profile.
+    """
+    conn = None
     try:
+        try:
+            body = await request.json()
+        except Exception:
+            form = await request.form()
+            body = dict(form)
+
+        login_id = (body.get("username_or_email") or body.get("username") or body.get("email") or "").strip().lower()
+        password = str(body.get("password") or "")
+
+        print(f"[LOGIN ATTEMPT] Request received for: {login_id}")
+
+        if not login_id or not password:
+            return JSONResponse(
+                status_code=400,
+                content={"status": "error", "message": "Username/Email and Password are required."}
+            )
+
+        conn = get_db_connection()
         cursor = conn.cursor()
-        login_id = payload.username_or_email
 
         cursor.execute(
             "SELECT id, username, email, hashed_password, full_name, is_verified FROM users WHERE LOWER(username) = ? OR LOWER(email) = ?",
@@ -372,9 +393,13 @@ def login(payload: LoginSchema):
         )
         user_row = cursor.fetchone()
         conn.close()
+        conn = None
 
-        if not user_row or not verify_password(payload.password, user_row["hashed_password"]):
-            make_error_response(status_code=401, detail="Invalid username or password.", code="INVALID_CREDENTIALS")
+        if not user_row or not verify_password(password, user_row["hashed_password"]):
+            return JSONResponse(
+                status_code=401,
+                content={"status": "error", "message": "Invalid username or password."}
+            )
 
         user = {
             "id": user_row["id"],
@@ -387,18 +412,29 @@ def login(payload: LoginSchema):
         access_token = create_access_token({"sub": user["username"], "user_id": user["id"]})
         refresh_token = create_refresh_token({"sub": user["username"], "user_id": user["id"]})
 
-        return {
-            "status": "success",
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer",
-            "user": user
-        }
-    except HTTPException:
-        raise
-    except Exception as exc:
-        conn.close()
-        make_error_response(status_code=500, detail=f"Login system error: {str(exc)}", code="SERVER_ERROR")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "success",
+                "message": "Workspace unlocked successfully.",
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "bearer",
+                "user": user
+            }
+        )
+    except Exception as e:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        print(f"[LOGIN CRASH EXCEPTION] {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
+
 
 @router.post("/request-reset-otp")
 def request_reset_otp(email: str):

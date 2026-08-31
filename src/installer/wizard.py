@@ -46,16 +46,19 @@ def get_user_desktop_paths() -> List[Path]:
 
     return desktop_paths
 
-def create_windows_lnk_shortcut(target_path: Path, shortcut_path: Path, working_dir: Path, description: str = "LinkedIn Autonomous Agent"):
+def create_windows_lnk_shortcut(target_path: Path, shortcut_path: Path, working_dir: Path, description: str = "LinkedIn Autonomous Agent", icon_path: Path = None):
     """Generates a true Windows .lnk shortcut file via PowerShell WScript.Shell COM object."""
+    icon_cmd = f'$Shortcut.IconLocation = "{icon_path}"; ' if (icon_path and icon_path.exists()) else ""
     ps_script = (
         f'$WshShell = New-Object -ComObject WScript.Shell; '
         f'$Shortcut = $WshShell.CreateShortcut("{shortcut_path}"); '
         f'$Shortcut.TargetPath = "{target_path}"; '
         f'$Shortcut.WorkingDirectory = "{working_dir}"; '
         f'$Shortcut.Description = "{description}"; '
+        f'{icon_cmd}'
         f'$Shortcut.Save()'
     )
+
     try:
         res = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_script], capture_output=True, text=True)
         if res.returncode == 0 and shortcut_path.exists():

@@ -112,4 +112,19 @@ async def launch_stealth_context(
 
     # Inject stealth scripts into all new pages
     await context.add_init_script(get_stealth_init_script())
+
+    # Inject saved LinkedIn session cookies if present
+    cookie_file = os.path.join(appdata, "LinkedInAgent", "linkedin_cookies.json")
+    if os.path.exists(cookie_file):
+        try:
+            import json
+            with open(cookie_file, "r", encoding="utf-8") as f:
+                cookies = json.load(f)
+                if cookies and isinstance(cookies, list):
+                    await context.add_cookies(cookies)
+                    print(f"[STEALTH BROWSER SESSION] Injected {len(cookies)} saved LinkedIn session cookies into browser context.")
+        except Exception as err:
+            print(f"[STEALTH BROWSER SESSION WARN] Failed to inject stored cookies: {err}")
+
     return context
+

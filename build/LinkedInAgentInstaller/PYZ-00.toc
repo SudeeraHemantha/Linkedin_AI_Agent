@@ -2554,14 +2554,6 @@
    'C:\\Users\\Elite '
    'computers\\Documents\\Linkedin_AI_Agent\\src\\backend\\database.py',
    'PYMODULE'),
-  ('src.installer',
-   'C:\\Users\\Elite '
-   'computers\\Documents\\Linkedin_AI_Agent\\src\\installer\\__init__.py',
-   'PYMODULE'),
-  ('src.installer.updater',
-   'C:\\Users\\Elite '
-   'computers\\Documents\\Linkedin_AI_Agent\\src\\installer\\updater.py',
-   'PYMODULE'),
   ('ssl',
    'C:\\Users\\Elite '
    'computers\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\ssl.py',
@@ -2617,6 +2609,10 @@
   ('tkinter.messagebox',
    'C:\\Users\\Elite '
    'computers\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\tkinter\\messagebox.py',
+   'PYMODULE'),
+  ('tkinter.ttk',
+   'C:\\Users\\Elite '
+   'computers\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\tkinter\\ttk.py',
    'PYMODULE'),
   ('token',
    'C:\\Users\\Elite '

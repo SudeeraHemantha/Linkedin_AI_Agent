@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Briefcase, MapPin, Globe, Save, CheckCircle2, AlertCircle } from 'lucide-react';
+import { User, Briefcase, MapPin, Globe, Save, CheckCircle2, AlertCircle, Link, ShieldCheck, Loader2 } from 'lucide-react';
 
 export default function ProfilePage({ user }) {
   const [targetRoles, setTargetRoles] = useState('Software Engineer');
@@ -10,6 +10,11 @@ export default function ProfilePage({ user }) {
   
   const [loading, setLoading] = useState(false);
   const [savedStatus, setSavedStatus] = useState(null); // 'success' | 'error' | null
+
+  // LinkedIn Session Bridge states
+  const [linkedinStatus, setLinkedinStatus] = useState('disconnected'); // 'connected' | 'disconnected'
+  const [connectingLinkedin, setConnectingLinkedin] = useState(false);
+  const [linkedinMessage, setLinkedinMessage] = useState(null);
 
   useEffect(() => {
     // Fetch saved preferences on mount
@@ -25,6 +30,16 @@ export default function ProfilePage({ user }) {
         }
       })
       .catch((err) => console.warn('[PREFERENCES FETCH WARN]', err));
+
+    // Fetch LinkedIn Session Status
+    fetch('http://127.0.0.1:8000/api/linkedin/status')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && data.status) {
+          setLinkedinStatus(data.status);
+        }
+      })
+      .catch((err) => console.warn('[LINKEDIN STATUS FETCH WARN]', err));
   }, []);
 
   const handleSave = async (e) => {
@@ -62,8 +77,95 @@ export default function ProfilePage({ user }) {
     }
   };
 
+  const handleConnectLinkedin = async () => {
+    setConnectingLinkedin(true);
+    setLinkedinMessage('Opening interactive browser... Please log into LinkedIn in the pop-up window.');
+
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/linkedin/connect', {
+        method: 'POST'
+      });
+      const data = await res.json();
+
+      if (res.ok && data.status === 'connected') {
+        setLinkedinStatus('connected');
+        setLinkedinMessage('LinkedIn session cookies successfully captured and stored!');
+      } else {
+        setLinkedinMessage(data.detail || data.message || 'Failed to authenticate LinkedIn session.');
+      }
+    } catch (err) {
+      console.error('[LINKEDIN CONNECT ERROR]', err);
+      setLinkedinMessage('Connection error. Ensure backend server is active.');
+    } finally {
+      setConnectingLinkedin(false);
+    }
+  };
+
   return (
     <div style={{ maxWidth: '850px' }}>
+      {/* LinkedIn Session Bridge Glass Panel */}
+      <div className="glass-panel" style={{ padding: '1.75rem', marginBottom: '1.5rem', borderLeft: '4px solid #0a66c2' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.3rem' }}>
+              <h4 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff' }}>LinkedIn Live Session Bridge</h4>
+              <span style={{
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                padding: '0.2rem 0.6rem',
+                borderRadius: '12px',
+                background: linkedinStatus === 'connected' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                color: linkedinStatus === 'connected' ? '#10b981' : '#f59e0b',
+                border: `1px solid ${linkedinStatus === 'connected' ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)'}`
+              }}>
+                {linkedinStatus === 'connected' ? '● Session Connected' : '○ Not Authenticated'}
+              </span>
+            </div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Authorize your live LinkedIn account session so the autonomous Playwright worker can apply to Easy Apply jobs.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleConnectLinkedin}
+            disabled={connectingLinkedin}
+            className="btn-primary"
+            style={{ background: '#0a66c2', borderColor: '#0a66c2' }}
+          >
+            {connectingLinkedin ? (
+              <>
+                <Loader2 className="animate-spin" size={18} /> Connecting Browser...
+              </>
+            ) : (
+              <>
+                <Link size={18} /> Connect / Authenticate LinkedIn Session
+              </>
+            )}
+          </button>
+        </div>
+
+        {linkedinMessage && (
+          <div style={{
+            marginTop: '1rem',
+            padding: '0.75rem 1rem',
+            borderRadius: '8px',
+            background: connectingLinkedin ? 'rgba(59, 130, 246, 0.15)' : linkedinStatus === 'connected' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+            border: `1px solid ${connectingLinkedin ? 'rgba(59, 130, 246, 0.4)' : linkedinStatus === 'connected' ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+            color: connectingLinkedin ? '#60a5fa' : linkedinStatus === 'connected' ? '#10b981' : '#ef4444',
+            fontSize: '0.88rem',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}>
+            {connectingLinkedin ? <Loader2 className="animate-spin" size={16} /> : linkedinStatus === 'connected' ? <ShieldCheck size={16} /> : <AlertCircle size={16} />}
+            {linkedinMessage}
+          </div>
+        )}
+      </div>
+
+      {/* Main Preferences Settings Card */}
       <div className="glass-panel" style={{ padding: '2rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', marginBottom: '2rem' }}>
           <div style={{

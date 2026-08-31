@@ -169,9 +169,15 @@ def invoke_llm_provider(prompt: str, temperature: float = 0.3, json_mode: bool =
     # Temperature clamping
     clamped_temp = max(0.0, min(1.0, temperature))
 
+    # Enforce 'json' keyword requirement for JSON mode API gateway validation
+    if json_mode and "json" not in prompt.lower():
+        prompt = prompt + "\nReturn output in valid json format."
+
     # 1. High-Speed Groq Developer API Call
     if groq_key:
-        groq_models = ["groq/compound", "openai/gpt-oss-120b", "llama-3.3-70b-versatile"]
+        groq_models = ["groq/compound", "openai/gpt-oss-120b", "groq/compound-mini", "qwen/qwen3.8-27b"]
+
+
 
         # Attempt official groq SDK if installed
         try:

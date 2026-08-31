@@ -15,12 +15,20 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def setup_e2e_db():
+    os.environ["DATABASE_PATH"] = "e2e_test_linkedin_agent.db"
     if os.path.exists("e2e_test_linkedin_agent.db"):
-        os.remove("e2e_test_linkedin_agent.db")
+        try:
+            os.remove("e2e_test_linkedin_agent.db")
+        except Exception:
+            pass
     init_db()
     yield
     if os.path.exists("e2e_test_linkedin_agent.db"):
-        os.remove("e2e_test_linkedin_agent.db")
+        try:
+            os.remove("e2e_test_linkedin_agent.db")
+        except Exception:
+            pass
+
 
 def test_full_e2e_system_acceptance(tmp_path):
     """

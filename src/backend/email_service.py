@@ -4,16 +4,40 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Dict, Any
 
+def load_env_file():
+    """Loads key-value pairs from .env file into os.environ if present."""
+    env_paths = [
+        os.path.join(os.getcwd(), ".env"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
+    ]
+    for env_path in env_paths:
+        if os.path.exists(env_path):
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k_clean = k.strip()
+                            v_clean = v.strip().strip("'\"")
+                            if k_clean not in os.environ:
+                                os.environ[k_clean] = v_clean
+            except Exception:
+                pass
+
+
 def send_otp_email(to_email: str, otp_code: str) -> Dict[str, Any]:
     """
     Sends a 6-digit OTP verification email via SMTP.
     Falls back gracefully to dev-mode console logging if SMTP credentials are missing or unreachable.
     """
+    load_env_file()
     smtp_host = os.environ.get("SMTP_HOST", "").strip()
     smtp_port = int(os.environ.get("SMTP_PORT", "587"))
     smtp_user = os.environ.get("SMTP_USER", "").strip()
     smtp_password = os.environ.get("SMTP_PASSWORD", "").strip()
-    from_email = os.environ.get("SMTP_FROM_EMAIL", "noreply@linkedinagent.com").strip()
+    from_email = os.environ.get("SMTP_FROM_EMAIL", smtp_user or "noreply@linkedinagent.com").strip()
+
 
     subject = "LinkedIn Autonomous Agent - Verification Code"
     

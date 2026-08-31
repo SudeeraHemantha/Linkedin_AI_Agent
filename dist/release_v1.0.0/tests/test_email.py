@@ -5,13 +5,15 @@ from src.backend.email_service import send_otp_email
 
 def test_send_otp_email_dev_mode_fallback():
     """Verify dev-mode fallback when SMTP credentials are not configured."""
-    if "SMTP_HOST" in os.environ:
-        del os.environ["SMTP_HOST"]
-        
+    os.environ["SMTP_HOST"] = ""
+    os.environ["SMTP_USER"] = ""
+    os.environ["SMTP_PASSWORD"] = ""
+
     result = send_otp_email("user@example.com", "123456")
     assert result["status"] == "dev_mode"
     assert result["otp_code"] == "123456"
     assert "dev logs" in result["message"]
+
 
 def test_send_otp_email_smtp_live_dispatch():
     """Verify live SMTP email construction and dispatch when credentials are set."""

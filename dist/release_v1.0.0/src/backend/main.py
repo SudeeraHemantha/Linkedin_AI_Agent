@@ -58,6 +58,19 @@ def get_job_applications(user_id: int = 1):
     conn.close()
     return [dict(r) for r in rows]
 
+from pydantic import BaseModel
+
+class AgentStartPayload(BaseModel):
+    keywords: str = "Full Stack Engineer"
+    location: str = "Remote"
+
+@app.post("/api/agent/start")
+def start_agent_job_hunt(payload: AgentStartPayload):
+    from src.agent.worker_daemon import run_live_job_hunt_cycle
+    res = run_live_job_hunt_cycle(keywords=payload.keywords, location=payload.location)
+    return res
+
+
 
 if __name__ == "__main__":
     import uvicorn

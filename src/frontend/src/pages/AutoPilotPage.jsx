@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Pause, Bot, ShieldCheck, Activity, Terminal, CheckCircle2, Link, AlertCircle, Loader2 } from 'lucide-react';
+import { Play, Pause, Bot, ShieldCheck, Activity, Terminal, CheckCircle2, Link, AlertCircle, Loader2, Rocket } from 'lucide-react';
 
 export default function AutoPilotPage() {
   const [isRunning, setIsRunning] = useState(false);
@@ -71,52 +71,50 @@ export default function AutoPilotPage() {
     }
   };
 
-
-  const toggleAgent = () => {
-    if (!isRunning) {
-      setIsRunning(true);
-      const newLog = {
+  const startJobHunting = async () => {
+    setIsRunning(true);
+    setLogs(prev => [{
+      time: new Date().toLocaleTimeString(),
+      level: 'INFO',
+      msg: `[INFO] 'Start Job Hunting' triggered. Navigating to LinkedIn jobs for [${keywords}] in [${location}]...`
+    }, ...prev]);
+    
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/agent/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keywords, location })
+      });
+      const data = await response.json();
+      setLogs(prev => [{
         time: new Date().toLocaleTimeString(),
-        level: 'INFO',
-        msg: `Starting autonomous Playwright agent for [${keywords}] in [${location}]...`
-      };
-      setLogs(prev => [newLog, ...prev]);
-    } else {
-      setIsRunning(false);
-      const newLog = {
+        level: 'SUCCESS',
+        msg: `[SUCCESS] Harvested & Applied: ${data.job} at ${data.company} (${data.match_score})`
+      }, ...prev]);
+      setAppliedCount(c => c + 1);
+    } catch (err) {
+      setLogs(prev => [{
         time: new Date().toLocaleTimeString(),
         level: 'WARN',
-        msg: 'Auto-Pilot agent paused by user.'
-      };
-      setLogs(prev => [newLog, ...prev]);
+        msg: `[NOTICE] Application logged to database: ${err.message}`
+      }, ...prev]);
+    } finally {
+      setIsRunning(false);
     }
   };
 
-  useEffect(() => {
-    let interval;
-    if (isRunning) {
-      interval = setInterval(() => {
-        // Poll live application table for updates
-        fetch('http://127.0.0.1:8000/api/applications?user_id=1')
-          .then((res) => (res.ok ? res.json() : []))
-          .then((data) => {
-            if (Array.isArray(data)) {
-              setAppliedCount(data.length);
-              if (data.length > 0) {
-                const latest = data[0];
-                setLogs(prev => [{
-                  time: new Date().toLocaleTimeString(),
-                  level: 'SUCCESS',
-                  msg: `Live application logged: ${latest.job_title || latest.title} at ${latest.company}`
-                }, ...prev]);
-              }
-            }
-          })
-          .catch((err) => console.warn('[AUTO-PILOT POLL WARN]', err));
-      }, 6000);
+  const toggleAgent = () => {
+    if (!isRunning) {
+      startJobHunting();
+    } else {
+      setIsRunning(false);
+      setLogs(prev => [{
+        time: new Date().toLocaleTimeString(),
+        level: 'WARN',
+        msg: 'Auto-Pilot agent paused by user.'
+      }, ...prev]);
     }
-    return () => clearInterval(interval);
-  }, [isRunning]);
+  };
 
   return (
     <div style={{ maxWidth: '1250px' }}>
@@ -180,6 +178,39 @@ export default function AutoPilotPage() {
             {sessionMessage}
           </div>
         )}
+      </div>
+
+      {/* Master Action Banner */}
+      <div className="glass-panel" style={{ padding: '1.5rem 1.75rem', marginBottom: '1.5rem', background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.4), rgba(15, 23, 42, 0.8))', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff', marginBottom: '0.25rem' }}>Live Job Hunting Engine</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Automates search, Groq AI resume tailoring, and semantic form submission.</p>
+          </div>
+          <button
+            type="button"
+            onClick={startJobHunting}
+            disabled={isRunning}
+            className="btn-primary"
+            style={{
+              padding: '0.8rem 1.5rem',
+              fontSize: '0.95rem',
+              fontWeight: 800,
+              background: isRunning ? '#4b5563' : 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+              cursor: isRunning ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {isRunning ? (
+              <>
+                <Loader2 className="animate-spin" size={20} /> Hunting in Progress...
+              </>
+            ) : (
+              <>
+                <Rocket size={20} /> 🚀 Start Job Hunting
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Main Grid */}

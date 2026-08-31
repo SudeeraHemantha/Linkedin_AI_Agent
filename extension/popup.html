@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LinkedIn AI Agent Controller</title>
+  <style>
+    body {
+      width: 320px;
+      margin: 0;
+      padding: 16px;
+      background-color: #020617;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+    }
+    .title {
+      font-size: 15px;
+      font-weight: 800;
+      color: #3b82f6;
+    }
+    .badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 10px;
+      background: rgba(16, 185, 129, 0.2);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+    .badge.offline {
+      background: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+      border-color: rgba(239, 68, 68, 0.4);
+    }
+    .form-group {
+      margin-bottom: 10px;
+    }
+    label {
+      display: block;
+      font-size: 11px;
+      color: #94a3b8;
+      margin-bottom: 4px;
+    }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      background: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #ffffff;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 13px;
+      border: none;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: #ffffff;
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #1d4ed8, #1e40af);
+    }
+    .btn-secondary {
+      background: #1e293b;
+      color: #94a3b8;
+      margin-top: 6px;
+    }
+    .btn-secondary:hover {
+      background: #334155;
+      color: #ffffff;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .stat-card {
+      background: #0f172a;
+      padding: 8px;
+      border-radius: 6px;
+      text-align: center;
+    }
+    .stat-val {
+      font-size: 16px;
+      font-weight: 800;
+      color: #3b82f6;
+    }
+    .stat-lbl {
+      font-size: 10px;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">LinkedIn AI Agent</div>
+    <div class="badge" id="statusBadge">BACKEND ONLINE</div>
+  </div>
+
+  <div class="form-group">
+    <label>Target Role Keywords</label>
+    <input type="text" id="keywords" value="Software Engineer" />
+  </div>
+
+  <div class="form-group">
+    <label>Location Filter</label>
+    <input type="text" id="location" value="Remote" />
+  </div>
+
+  <button class="btn btn-primary" id="btnTrigger">🚀 Launch Groq AI Auto-Apply</button>
+  <button class="btn btn-secondary" id="btnDashboard">Open Local Web Dashboard</button>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-val" id="appliedCount">0</div>
+      <div class="stat-lbl">Applications</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" style="color:#10b981;">100%</div>
+      <div class="stat-lbl">Stealth Status</div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

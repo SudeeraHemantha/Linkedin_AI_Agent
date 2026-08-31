@@ -33,6 +33,9 @@ def build_package():
     shutil.copytree(ROOT_DIR / "src", RELEASE_DIR / "src", ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "node_modules"))
     shutil.copytree(ROOT_DIR / "docs", RELEASE_DIR / "docs")
     shutil.copytree(ROOT_DIR / "tests", RELEASE_DIR / "tests")
+    if (ROOT_DIR / "extension").exists():
+        shutil.copytree(ROOT_DIR / "extension", RELEASE_DIR / "extension")
+
 
     # Copy Root Files
     shutil.copy(ROOT_DIR / "README.md", RELEASE_DIR / "README.md")

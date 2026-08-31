@@ -18,13 +18,30 @@ BORDER_COLOR = "#334155"
 
 def create_desktop_shortcuts(root_dir: Path):
     """Creates bulletproof Windows Desktop .lnk shortcuts pointing to launch_agent.bat with branded icon."""
+    root_dir = Path(root_dir).resolve()
     target_bat = (root_dir / "launch_agent.bat").resolve()
     if not target_bat.exists():
         target_bat = (root_dir / "start_agent.bat").resolve()
 
+    if not target_bat.exists():
+        target_bat = (root_dir / "launch_agent.bat").resolve()
+        with open(target_bat, "w", encoding="utf-8") as f:
+            f.write("@echo off\n")
+            f.write(f'cd /d "{root_dir}"\n')
+            f.write(f'set "PYTHONPATH={root_dir};%PYTHONPATH%"\n')
+            f.write('start "LinkedIn Agent Backend" /min cmd /c "py -m uvicorn src.backend.main:app --host 127.0.0.1 --port 8000"\n')
+            f.write('start "LinkedIn Agent Frontend" /min cmd /c "cd /d "%~dp0src\\frontend" && npm run dev"\n')
+            f.write('start "" "http://localhost:3000"\n')
+
+    start_bat = (root_dir / "start_agent.bat").resolve()
+    if not start_bat.exists():
+        with open(start_bat, "w", encoding="utf-8") as f:
+            f.write(f'@echo off\ncall "{target_bat}"\n')
+
     icon_path = (root_dir / "assets" / "app_icon.ico").resolve()
     if not icon_path.exists():
         icon_path = (root_dir / "src" / "installer" / "app_icon.ico").resolve()
+
 
     desktop_paths = []
     # 1. Standard User Desktop

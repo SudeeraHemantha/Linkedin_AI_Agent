@@ -41,37 +41,49 @@ export default function AutoPilotPage() {
 
   const handleConnectLinkedin = async () => {
     setConnectingLinkedin(true);
-    setSessionMessage('Opening interactive browser... Please log into LinkedIn in the pop-up window.');
+    setLogs(prev => [{
+      time: new Date().toLocaleTimeString(),
+      level: 'INFO',
+      msg: 'Launching interactive LinkedIn login window...'
+    }, ...prev]);
 
     try {
       const res = await fetch('http://127.0.0.1:8000/api/linkedin/connect', {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
       });
       const data = await res.json();
 
-      if (res.ok && data.status === 'connected') {
+      if (data.status === 'connected' || res.ok) {
         setLinkedinStatus('connected');
-        setSessionMessage('LinkedIn session cookies successfully captured and stored!');
+        setSessionMessage('LinkedIn session authenticated and cookies locked successfully!');
         setLogs(prev => [{
           time: new Date().toLocaleTimeString(),
           level: 'SUCCESS',
-          msg: 'LinkedIn session authenticated. Live cookies stored.'
+          msg: 'LinkedIn session authenticated and cookies locked successfully!'
         }, ...prev]);
         setTimeout(() => setSessionMessage(null), 4000);
       } else {
-        setLinkedinStatus('connected');
-        setSessionMessage('Session connected via persistent Chrome profile context.');
-        setTimeout(() => setSessionMessage(null), 4000);
+        setSessionMessage(data.message || 'Failed to authenticate LinkedIn session.');
+        setLogs(prev => [{
+          time: new Date().toLocaleTimeString(),
+          level: 'WARN',
+          msg: `Login bridge response: ${data.message || 'Failed'}`
+        }, ...prev]);
       }
     } catch (err) {
       console.error('[LINKEDIN CONNECT ERROR]', err);
-      setLinkedinStatus('connected');
-      setSessionMessage('Local persistent Chrome profile session active.');
-      setTimeout(() => setSessionMessage(null), 4000);
+      setSessionMessage('Failed to connect to backend login service.');
+      setLogs(prev => [{
+        time: new Date().toLocaleTimeString(),
+        level: 'WARN',
+        msg: `Failed to connect to backend login service: ${err.message}`
+      }, ...prev]);
     } finally {
       setConnectingLinkedin(false);
     }
   };
+
 
   const startJobHunting = async () => {
     setIsRunning(true);

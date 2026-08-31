@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+root_path = Path(__file__).parent.parent.parent.resolve()
+if str(root_path) not in sys.path:
+    sys.path.insert(0, str(root_path))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.backend.database import init_db
@@ -7,6 +13,7 @@ from src.backend.preferences import router as preferences_router
 from src.backend.linkedin_auth import router as linkedin_auth_router
 
 app = FastAPI(
+
     title="LinkedIn Autonomous Agent Backend",
     description="Local-First Hybrid Application Core Backend API",
     version="1.0.0"

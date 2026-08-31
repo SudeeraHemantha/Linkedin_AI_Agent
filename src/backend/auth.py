@@ -214,36 +214,50 @@ def make_error_response(status_code: int, detail: str, code: str):
 # API Endpoints with Transactional Integrity
 @router.post("/register")
 def register_user(payload: UserRegisterSchema):
+    """
+    Registration endpoint that accepts JSON body payload, extracts user fields,
+    inserts user into SQLite, generates 5-minute OTP, and returns a valid JSON response.
+    """
+    username = payload.username
+    email = payload.email
+    password = payload.password
+    full_name = payload.full_name or username
+
+
+    # 1. Extract and validate required user fields
+    if not username or not email or not password:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Username, email, and password are required."}
+        )
+
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        clean_username = payload.username
-        clean_email = payload.email
 
-        cursor.execute("SELECT id FROM users WHERE username = ? OR email = ?", (clean_username, clean_email))
+        # Check existing user
+        cursor.execute("SELECT id FROM users WHERE username = ? OR email = ?", (username, email))
         if cursor.fetchone():
             conn.close()
-            make_error_response(
+            return JSONResponse(
                 status_code=400,
-                detail="User with this username or email already exists.",
-                code="DUPLICATE_USER"
+                content={"status": "error", "message": "User with this username or email already exists."}
             )
 
-        hashed_pw = hash_password(payload.password)
+        hashed_pw = hash_password(password)
 
         try:
             cursor.execute(
                 "INSERT INTO users (username, email, hashed_password, full_name, is_verified) VALUES (?, ?, ?, ?, 0)",
-                (clean_username, clean_email, hashed_pw, payload.full_name or clean_username)
+                (username, email, hashed_pw, full_name)
             )
         except sqlite3.IntegrityError as db_err:
             conn.rollback()
             conn.close()
             print(f"[REGISTRATION DB TRANSACTION ROLLBACK] IntegrityError: {db_err}")
-            make_error_response(
+            return JSONResponse(
                 status_code=400,
-                detail="User already exists in database.",
-                code="DUPLICATE_USER"
+                content={"status": "error", "message": "User already exists in database."}
             )
 
         # Generate enterprise OTP (valid for strict 5 minutes)
@@ -251,35 +265,39 @@ def register_user(payload: UserRegisterSchema):
         expires_at = (datetime.utcnow() + timedelta(minutes=OTP_TTL_MINUTES)).isoformat()
         cursor.execute(
             "INSERT INTO otps (user_email, otp_code, expires_at, is_used) VALUES (?, ?, ?, 0)",
-            (clean_email, otp_code, expires_at)
+            (email, otp_code, expires_at)
         )
         
         conn.commit()
         conn.close()
 
         # Trigger live SMTP dispatch (or dev-mode fallback)
-        send_otp_email(clean_email, otp_code)
+        send_otp_email(email, otp_code)
 
-        print(f"[ENTERPRISE OTP DISPATCH] 5-min OTP for {clean_email}: {otp_code}")
+        print(f"[ENTERPRISE OTP DISPATCH] 5-min OTP for {email}: {otp_code}")
 
+        # 3. ALWAYS return a valid JSON response dictionary
         return {
             "status": "success",
-            "message": "User registered successfully. Verification 2FA OTP dispatched.",
-            "email": clean_email,
+            "message": "Registration successful. OTP verification dispatched.",
+            "username": username,
+            "email": email,
             "debug_otp": otp_code
         }
 
-    except HTTPException:
-        raise
-    except Exception as exc:
-        conn.rollback()
-        conn.close()
-        print(f"[REGISTRATION SYSTEM ERROR] {exc}")
-        make_error_response(
+    except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
+        print(f"[REGISTRATION SYSTEM ERROR] {e}")
+        return JSONResponse(
             status_code=500,
-            detail=f"Registration system error: {str(exc)}",
-            code="SERVER_ERROR"
+            content={"status": "error", "message": f"Registration error: {str(e)}"}
         )
+
 
 @router.post("/verify-otp")
 def verify_otp(payload: VerifyOTPSchema):

@@ -135,19 +135,51 @@ def calculate_dual_layer_ats_matrix(resume_text: str, job_description: str) -> D
 
 def invoke_llm_provider(prompt: str, temperature: float = 0.2, json_mode: bool = True) -> Optional[Dict[str, Any]]:
     """
-    Dynamic multi-provider LLM client abstraction supporting OpenAI / Anthropic.
+    Dynamic multi-provider LLM client abstraction supporting Groq, OpenAI, and Anthropic.
     Enforces strict temperature bounds and JSON-mode response formatting.
     """
     load_env_file()
+    groq_key = os.environ.get("GROQ_API_KEY")
     openai_key = os.environ.get("OPENAI_API_KEY")
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
 
-    if not openai_key and not anthropic_key:
+    if not groq_key and not openai_key and not anthropic_key:
         return None
 
     # Temperature clamping
     clamped_temp = max(0.0, min(1.0, temperature))
 
+    # 1. High-Speed Groq Developer API Call
+    if groq_key:
+        try:
+            import urllib.request
+            req_payload = {
+                "model": "llama-3.3-70b-versatile",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": clamped_temp
+            }
+            if json_mode:
+                req_payload["response_format"] = {"type": "json_object"}
+
+            req_data = json.dumps(req_payload).encode('utf-8')
+            req = urllib.request.Request(
+                "https://api.groq.com/openai/v1/chat/completions",
+                data=req_data,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {groq_key}"
+                }
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                result = json.loads(resp.read().decode('utf-8'))
+                raw_content = result["choices"][0]["message"]["content"]
+                res_obj = json.loads(raw_content) if json_mode else {"text": raw_content}
+                res_obj["_provider"] = "Live Groq LLaMA-3.3-70b-versatile"
+                return res_obj
+        except Exception as err:
+            print(f"[LIVE GROQ API ERROR] {err}. Attempting fallback providers...")
+
+    # 2. OpenAI API Fallback
     if openai_key:
         try:
             import urllib.request
@@ -160,7 +192,6 @@ def invoke_llm_provider(prompt: str, temperature: float = 0.2, json_mode: bool =
                 req_payload["response_format"] = {"type": "json_object"}
 
             req_data = json.dumps(req_payload).encode('utf-8')
-            
             req = urllib.request.Request(
                 "https://api.openai.com/v1/chat/completions",
                 data=req_data,
@@ -169,10 +200,12 @@ def invoke_llm_provider(prompt: str, temperature: float = 0.2, json_mode: bool =
                     "Authorization": f"Bearer {openai_key}"
                 }
             )
-            with urllib.request.urlopen(req, timeout=12) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:
                 result = json.loads(resp.read().decode('utf-8'))
                 raw_content = result["choices"][0]["message"]["content"]
-                return json.loads(raw_content) if json_mode else {"text": raw_content}
+                res_obj = json.loads(raw_content) if json_mode else {"text": raw_content}
+                res_obj["_provider"] = "Live OpenAI GPT-4o-mini"
+                return res_obj
         except Exception as err:
             print(f"[LIVE OPENAI API ERROR] {err}")
 
@@ -182,7 +215,7 @@ def invoke_llm_provider(prompt: str, temperature: float = 0.2, json_mode: bool =
 @router.post("/tailor-resume")
 def tailor_resume(payload: TailorResumeRequest):
     """
-    Tailors resume to match job description using live OpenAI/Anthropic API with JSON mode.
+    Tailors resume to match job description using live Groq/OpenAI/Anthropic API with JSON mode.
     Raises HTTP 400 if API key is missing from .env file.
     """
     load_env_file()
@@ -190,14 +223,15 @@ def tailor_resume(payload: TailorResumeRequest):
     clean_jd = (payload.job_description or "").strip()
     clean_resume = (payload.resume_text or "").strip()
 
+    groq_key = os.environ.get("GROQ_API_KEY")
     openai_key = os.environ.get("OPENAI_API_KEY")
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     allow_fallback = os.environ.get("ALLOW_HEURISTIC_FALLBACK", "0") == "1" or os.environ.get("TESTING", "0") == "1"
 
-    if not openai_key and not anthropic_key and not allow_fallback:
+    if not groq_key and not openai_key and not anthropic_key and not allow_fallback:
         raise HTTPException(
             status_code=400,
-            detail="OPENAI_API_KEY or ANTHROPIC_API_KEY is not configured in .env file. Please populate your .env file with a valid live API key to enable AI features."
+            detail="GROQ_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY is not configured in .env file. Please populate your .env file with a valid live API key to enable AI features."
         )
 
     if not clean_jd:
@@ -229,7 +263,7 @@ def tailor_resume(payload: TailorResumeRequest):
     llm_result = invoke_llm_provider(prompt, temperature=0.2, json_mode=True)
 
     if llm_result and "suggested_bullet_points" in llm_result:
-        provider_name = "Live OpenAI GPT-4o-mini"
+        provider_name = llm_result.get("_provider", "Live Groq LLaMA-3.3-70b-versatile")
         tailored_summary = llm_result.get("tailored_summary", f"Results-driven {clean_role}.")
         recommended_keywords = llm_result.get("recommended_keywords", ats_matrix["matched_keywords"])
         bullet_points = llm_result.get("suggested_bullet_points", [])
@@ -259,7 +293,7 @@ def tailor_resume(payload: TailorResumeRequest):
 @router.post("/generate-cover-letter")
 def generate_cover_letter(payload: CoverLetterRequest):
     """
-    Generates personalized cover letter with temperature 0.7 using live OpenAI/Anthropic API.
+    Generates personalized cover letter with temperature 0.7 using live Groq/OpenAI/Anthropic API.
     Raises HTTP 400 if API key is missing from .env file.
     """
     load_env_file()
@@ -268,14 +302,15 @@ def generate_cover_letter(payload: CoverLetterRequest):
     clean_jd = (payload.job_description or "").strip()
     clean_resume = (payload.resume_text or "").strip()
 
+    groq_key = os.environ.get("GROQ_API_KEY")
     openai_key = os.environ.get("OPENAI_API_KEY")
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     allow_fallback = os.environ.get("ALLOW_HEURISTIC_FALLBACK", "0") == "1" or os.environ.get("TESTING", "0") == "1"
 
-    if not openai_key and not anthropic_key and not allow_fallback:
+    if not groq_key and not openai_key and not anthropic_key and not allow_fallback:
         raise HTTPException(
             status_code=400,
-            detail="OPENAI_API_KEY or ANTHROPIC_API_KEY is not configured in .env file. Please populate your .env file with a valid live API key to enable AI features."
+            detail="GROQ_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY is not configured in .env file. Please populate your .env file with a valid live API key to enable AI features."
         )
 
     prompt = (
@@ -307,4 +342,3 @@ def generate_cover_letter(payload: CoverLetterRequest):
         "job_title": title,
         "cover_letter": cover_letter_text
     }
-

@@ -48,6 +48,17 @@ def root():
 def health_check():
     return {"status": "healthy", "database": "connected"}
 
+@app.get("/api/applications")
+def get_job_applications(user_id: int = 1):
+    from src.backend.database import get_db_connection
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM job_applications WHERE user_id = ? ORDER BY applied_at DESC", (user_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("src.backend.main:app", host="127.0.0.1", port=8000, reload=True)

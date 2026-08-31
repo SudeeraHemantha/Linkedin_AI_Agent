@@ -1,32 +1,46 @@
-import React, { useState } from 'react';
-import { Activity, CheckCircle, Clock, ExternalLink, Filter } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Activity, CheckCircle, Clock, ExternalLink, Filter, Inbox } from 'lucide-react';
 
 export default function LiveTrackerPage() {
   const [filter, setFilter] = useState('ALL');
-  
-  const applications = [
-    { id: 1, title: 'Senior Full Stack Engineer', company: 'TechScale Inc.', location: 'Remote - US', url: 'https://linkedin.com', status: 'APPLIED', score: 94, date: '2026-08-30' },
-    { id: 2, title: 'Lead Python Architect', company: 'DataDrive AI', location: 'Remote - Global', url: 'https://linkedin.com', status: 'INTERVIEWING', score: 98, date: '2026-08-29' },
-    { id: 3, title: 'Autonomous Systems Engineer', company: 'CyberEdge Labs', location: 'Hybrid - NY', url: 'https://linkedin.com', status: 'APPLIED', score: 89, date: '2026-08-28' },
-    { id: 4, title: 'Backend Cloud Developer', company: 'CloudNimbus Systems', location: 'Remote', url: 'https://linkedin.com', status: 'OFFER', score: 96, date: '2026-08-25' }
-  ];
+  const [applications, setApplications] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const filteredApps = filter === 'ALL' ? applications : applications.filter(a => a.status === filter);
+  useEffect(() => {
+    fetch('http://127.0.0.1:8000/api/applications?user_id=1')
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setApplications(data);
+        }
+      })
+      .catch((err) => console.warn('[LIVE TRACKER FETCH WARN]', err))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filteredApps = filter === 'ALL'
+    ? applications
+    : applications.filter(a => (a.status || '').toUpperCase() === filter);
+
+  const totalCount = applications.length;
+  const avgScore = totalCount > 0
+    ? (applications.reduce((acc, curr) => acc + (curr.match_score || curr.score || 85), 0) / totalCount).toFixed(1)
+    : '0.0';
 
   return (
     <div style={{ maxWidth: '1200px' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.25rem', marginBottom: '1.5rem' }}>
         <div className="glass-panel" style={{ padding: '1.25rem' }}>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Total Applications Sent</span>
-          <h3 style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff', marginTop: '0.25rem' }}>42</h3>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Total Submitted Applications</span>
+          <h3 style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff', marginTop: '0.25rem' }}>{totalCount}</h3>
         </div>
         <div className="glass-panel" style={{ padding: '1.25rem' }}>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Average ATS Match</span>
-          <h3 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--accent-emerald)', marginTop: '0.25rem' }}>93.8%</h3>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Average ATS Match Score</span>
+          <h3 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--accent-emerald)', marginTop: '0.25rem' }}>{avgScore}%</h3>
         </div>
         <div className="glass-panel" style={{ padding: '1.25rem' }}>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Active Interviews</span>
-          <h3 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--accent-indigo)', marginTop: '0.25rem' }}>3</h3>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Live SQLite Storage</span>
+          <h3 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--accent-indigo)', marginTop: '0.25rem' }}>Active</h3>
         </div>
       </div>
 
@@ -55,43 +69,59 @@ export default function LiveTrackerPage() {
           </div>
         </div>
 
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
-              <th style={{ padding: '0.75rem 1rem' }}>JOB TITLE & COMPANY</th>
-              <th style={{ padding: '0.75rem 1rem' }}>LOCATION</th>
-              <th style={{ padding: '0.75rem 1rem' }}>MATCH SCORE</th>
-              <th style={{ padding: '0.75rem 1rem' }}>STATUS</th>
-              <th style={{ padding: '0.75rem 1rem' }}>APPLIED DATE</th>
-              <th style={{ padding: '0.75rem 1rem' }}>ACTION</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredApps.map((app) => (
-              <tr key={app.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                <td style={{ padding: '1rem' }}>
-                  <div style={{ fontWeight: 700, color: '#fff' }}>{app.title}</div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{app.company}</div>
-                </td>
-                <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>{app.location}</td>
-                <td style={{ padding: '1rem' }}>
-                  <span className="badge badge-emerald">{app.score}% Match</span>
-                </td>
-                <td style={{ padding: '1rem' }}>
-                  <span className={app.status === 'OFFER' ? 'badge badge-emerald' : app.status === 'INTERVIEWING' ? 'badge badge-indigo' : 'badge badge-amber'}>
-                    {app.status}
-                  </span>
-                </td>
-                <td style={{ padding: '1rem', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>{app.date}</td>
-                <td style={{ padding: '1rem' }}>
-                  <a href={app.url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-cyan)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    View <ExternalLink size={14} />
-                  </a>
-                </td>
+        {loading ? (
+          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+            Loading live application records from SQLite...
+          </div>
+        ) : filteredApps.length === 0 ? (
+          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+            <Inbox size={48} style={{ opacity: 0.4, marginBottom: '1rem' }} />
+            <h4 style={{ color: '#fff', fontSize: '1.1rem', marginBottom: '0.4rem' }}>No Live Applications Logged Yet</h4>
+            <p style={{ fontSize: '0.88rem', maxWidth: '480px', margin: '0 auto' }}>
+              Launch the Auto-Pilot Agent on the Auto-Pilot page to harvest matching roles and submit live applications.
+            </p>
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                <th style={{ padding: '0.75rem 1rem' }}>JOB TITLE & COMPANY</th>
+                <th style={{ padding: '0.75rem 1rem' }}>LOCATION</th>
+                <th style={{ padding: '0.75rem 1rem' }}>MATCH SCORE</th>
+                <th style={{ padding: '0.75rem 1rem' }}>STATUS</th>
+                <th style={{ padding: '0.75rem 1rem' }}>APPLIED DATE</th>
+                <th style={{ padding: '0.75rem 1rem' }}>ACTION</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filteredApps.map((app, idx) => (
+                <tr key={app.id || idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <td style={{ padding: '1rem' }}>
+                    <div style={{ fontWeight: 700, color: '#fff' }}>{app.job_title || app.title}</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{app.company}</div>
+                  </td>
+                  <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>{app.location || 'Remote'}</td>
+                  <td style={{ padding: '1rem' }}>
+                    <span className="badge badge-emerald">{(app.match_score || app.score || 85).toFixed(0)}% Match</span>
+                  </td>
+                  <td style={{ padding: '1rem' }}>
+                    <span className={app.status === 'OFFER' ? 'badge badge-emerald' : app.status === 'INTERVIEWING' ? 'badge badge-indigo' : 'badge badge-amber'}>
+                      {app.status}
+                    </span>
+                  </td>
+                  <td style={{ padding: '1rem', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>
+                    {app.applied_at ? app.applied_at.substring(0, 10) : 'Just Now'}
+                  </td>
+                  <td style={{ padding: '1rem' }}>
+                    <a href={app.job_url || app.url || '#'} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-cyan)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      View <ExternalLink size={14} />
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

@@ -69,3 +69,17 @@ def update_user_preferences(payload: UserPreferencesSchema):
         conn.rollback()
         conn.close()
         raise HTTPException(status_code=500, detail=f"Failed to save preferences: {str(err)}")
+
+@router.get("/applications")
+def get_user_job_applications(user_id: int = Query(1, description="User ID to fetch applications for")):
+    """Fetches real job applications submitted by the autonomous agent from SQLite."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM job_applications WHERE user_id = ? ORDER BY applied_at DESC",
+        (user_id,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+

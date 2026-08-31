@@ -152,25 +152,8 @@ class LinkedInAutonomousBot:
         except Exception as err:
             await self.log_dom_snapshot_on_failure(page, "execute_job_search", err)
 
-        if not parsed_jobs:
-            parsed_jobs = [
-                {
-                    "title": f"Senior {self.keywords}",
-                    "company": "TechScale Systems",
-                    "location": self.location,
-                    "url": f"https://www.linkedin.com/jobs/view/{int(time.time())}",
-                    "easy_apply": True
-                },
-                {
-                    "title": f"Lead {self.keywords} Architect",
-                    "company": "DataDrive AI",
-                    "location": self.location,
-                    "url": f"https://www.linkedin.com/jobs/view/{int(time.time())+1}",
-                    "easy_apply": True
-                }
-            ]
-
         return parsed_jobs
+
 
 
 

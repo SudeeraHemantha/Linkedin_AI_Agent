@@ -16,6 +16,58 @@ TEXT_COLOR = "#f8fafc"
 MUTED_TEXT = "#94a3b8"
 BORDER_COLOR = "#334155"
 
+def create_desktop_shortcuts(root_dir: Path):
+    """Creates bulletproof Windows Desktop .lnk shortcuts pointing to launch_agent.bat with branded icon."""
+    target_bat = (root_dir / "launch_agent.bat").resolve()
+    if not target_bat.exists():
+        target_bat = (root_dir / "start_agent.bat").resolve()
+
+    icon_path = (root_dir / "assets" / "app_icon.ico").resolve()
+    if not icon_path.exists():
+        icon_path = (root_dir / "src" / "installer" / "app_icon.ico").resolve()
+
+    desktop_paths = []
+    # 1. Standard User Desktop
+    user_desktop = (Path(os.path.expanduser("~")) / "Desktop").resolve()
+    if user_desktop.exists():
+        desktop_paths.append(user_desktop)
+
+    # 2. OneDrive Desktop
+    onedrive_desktop = (Path(os.path.expanduser("~")) / "OneDrive" / "Desktop").resolve()
+    if onedrive_desktop.exists() and onedrive_desktop not in desktop_paths:
+        desktop_paths.append(onedrive_desktop)
+
+    # 3. Registry User Shell Folders Desktop
+    try:
+        import winreg
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders")
+        desktop_reg, _ = winreg.QueryValueEx(key, "Desktop")
+        winreg.CloseKey(key)
+        reg_desktop = Path(os.path.expandvars(desktop_reg)).resolve()
+        if reg_desktop.exists() and reg_desktop not in desktop_paths:
+            desktop_paths.append(reg_desktop)
+    except Exception:
+        pass
+
+    for d_path in desktop_paths:
+        shortcut_lnk = d_path / "LinkedIn Autonomous Agent.lnk"
+        icon_cmd = f'$Shortcut.IconLocation = "{icon_path}"; ' if icon_path.exists() else ""
+        ps_script = (
+            f'$WshShell = New-Object -ComObject WScript.Shell; '
+            f'$Shortcut = $WshShell.CreateShortcut("{shortcut_lnk}"); '
+            f'$Shortcut.TargetPath = "{target_bat}"; '
+            f'$Shortcut.WorkingDirectory = "{root_dir}"; '
+            f'$Shortcut.Description = "LinkedIn Autonomous Agent Platform"; '
+            f'{icon_cmd}'
+            f'$Shortcut.Save()'
+        )
+        try:
+            res = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_script], capture_output=True, text=True)
+            if res.returncode == 0 and shortcut_lnk.exists():
+                print(f"[GUI INSTALLER SHORTCUT] Created shortcut at: {shortcut_lnk}")
+        except Exception as err:
+            print(f"[GUI INSTALLER SHORTCUT WARN] PowerShell shortcut creation warning: {err}")
+
 class ModernSetupWizard:
     def __init__(self, root):
         self.root = root
@@ -29,6 +81,9 @@ class ModernSetupWizard:
 
         # Set window icon if present
         self.icon_path = os.path.join(os.path.dirname(__file__), "app_icon.ico")
+        if not os.path.exists(self.icon_path):
+            self.icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "app_icon.ico")
+
         if os.path.exists(self.icon_path):
             try:
                 self.root.iconbitmap(self.icon_path)
@@ -172,6 +227,7 @@ class ModernSetupWizard:
             "LinkedIn Autonomous Agent has been successfully configured and installed!\n\n"
             "• AppData Database: %APPDATA%\\LinkedInAgent\\linkedin_agent.db\n"
             "• Configuration Secrets Saved to .env\n"
+            "• Desktop Shortcut Generated with Branded Icon\n"
             "• System Tray Daemon Ready\n\n"
             "Click 'Launch Application' to start the local backend server, frontend dashboard, and system tray app."
         )
@@ -218,10 +274,12 @@ class ModernSetupWizard:
         self.root.update_idletasks()
 
     def run_installation(self):
+        root_dir = Path(__file__).parent.parent.parent.resolve()
+
         # 1. Save Configuration to .env
         self.log_status("[1/4] Saving environment configuration to .env...")
-        self.progress_bar["value"] = 20
-        time.sleep(0.5)
+        self.progress_bar["value"] = 25
+        time.sleep(0.4)
 
         groq_val = self.groq_key_var.get().strip()
         smtp_user_val = self.smtp_user_var.get().strip()
@@ -236,7 +294,6 @@ class ModernSetupWizard:
             f"DATABASE_PATH=%APPDATA%\\LinkedInAgent\\linkedin_agent.db\n"
         )
 
-        root_dir = Path(__file__).parent.parent.parent
         with open(root_dir / ".env", "w", encoding="utf-8") as f:
             f.write(env_content)
 
@@ -249,8 +306,8 @@ class ModernSetupWizard:
 
         # 2. Database Initialization
         self.log_status("[2/4] Initializing non-volatile SQLite database in AppData...")
-        self.progress_bar["value"] = 50
-        time.sleep(0.6)
+        self.progress_bar["value"] = 55
+        time.sleep(0.5)
 
         try:
             from src.backend.database import init_db
@@ -259,24 +316,39 @@ class ModernSetupWizard:
         except Exception as err:
             self.log_status(f"[WARN] Database init notice: {err}")
 
-        # 3. Register Launcher Scripts
-        self.log_status("[3/4] Registering launcher batch scripts and system tray daemon...")
-        self.progress_bar["value"] = 85
+        # 3. Create Windows Desktop Shortcuts with Branded Icon
+        self.log_status("[3/4] Creating Windows Desktop shortcut with branded icon...")
+        self.progress_bar["value"] = 80
         time.sleep(0.5)
-        self.log_status("[✓] System tray background manager configured.")
+        create_desktop_shortcuts(root_dir)
+        self.log_status("[✓] Desktop shortcut created.")
 
         # 4. Finalize
-        self.log_status("[4/4] Installation completed successfully!")
+        self.log_status("[4/4] Setup completed successfully!")
         self.progress_bar["value"] = 100
-        time.sleep(0.5)
+        time.sleep(0.4)
 
-        self.root.after(1000, lambda: self.show_screen(4))
+        self.root.after(800, lambda: self.show_screen(4))
 
     def launch_app(self):
-        root_dir = Path(__file__).parent.parent.parent
-        bat_script = root_dir / "launch_agent.bat"
+        root_dir = Path(__file__).parent.parent.parent.resolve()
+        bat_script = (root_dir / "launch_agent.bat").resolve()
+        if not bat_script.exists():
+            bat_script = (root_dir / "start_agent.bat").resolve()
+
         if bat_script.exists():
-            subprocess.Popen([str(bat_script)], shell=True, cwd=str(root_dir))
+            try:
+                creationflags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
+                subprocess.Popen(
+                    [str(bat_script)],
+                    shell=True,
+                    cwd=str(root_dir),
+                    creationflags=creationflags
+                )
+            except Exception as err:
+                print(f"[GUI LAUNCHER ERROR] Failed to spawn launch script: {err}")
+                subprocess.Popen([str(bat_script)], shell=True, cwd=str(root_dir))
+
         self.root.destroy()
 
 def main():

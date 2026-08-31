@@ -172,25 +172,26 @@ async def connect_linkedin_account():
     return await launch_headed_login_bridge(timeout_seconds=45)
 
 class LaunchWorkspacePayload(BaseModel):
-    target_url: str = "https://www.linkedin.com/feed/"
+    target_url: Optional[str] = "https://www.linkedin.com/feed/"
 
 @router.post("/launch-workspace")
-async def launch_linkedin_workspace(payload: LaunchWorkspacePayload):
+async def launch_linkedin_workspace(payload: Optional[Dict[str, Any]] = None):
     """
-    Launches an independent, secure non-headless Chrome window with stored cookies
-    so the user can view and interact with LinkedIn natively without iframe security blocks.
+    Spawns a non-headless Playwright Chromium session loaded with stored LinkedIn cookies.
     """
+    if not payload:
+        payload = {}
+    target_url = payload.get("target_url") or "https://www.linkedin.com/feed/"
+    cookie_path = get_cookies_file_path()
+
     try:
         from playwright.async_api import async_playwright
     except ImportError:
-        return {"status": "error", "message": "Playwright is not installed."}
+        return JSONResponse(status_code=500, content={"status": "error", "message": "Playwright is not installed."})
 
-    target = payload.target_url or "https://www.linkedin.com/feed/"
-    
     async def _launch():
         try:
             async with async_playwright() as p:
-                cookies = load_stored_cookies()
                 browser = await p.chromium.launch(
                     headless=False,
                     args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
@@ -199,16 +200,20 @@ async def launch_linkedin_workspace(payload: LaunchWorkspacePayload):
                     viewport={"width": 1280, "height": 850},
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
                 )
-                if cookies:
+
+                if os.path.exists(cookie_path):
                     try:
-                        await context.add_cookies(cookies)
+                        with open(cookie_path, "r", encoding="utf-8") as f:
+                            cookies = json.load(f)
+                            if cookies:
+                                await context.add_cookies(cookies)
                     except Exception as c_err:
                         print(f"[WORKSPACE COOKIE INJECT NOTICE] {c_err}")
-                
+
                 page = await context.new_page()
-                print(f"[WORKSPACE LAUNCH] Opening native window to {target}")
-                await page.goto(target, wait_until="domcontentloaded")
-                await asyncio.sleep(60)
+                print(f"[WORKSPACE LAUNCH] Opening native window to {target_url}")
+                await page.goto(target_url, wait_until="domcontentloaded")
+                await asyncio.sleep(600)
                 await browser.close()
         except Exception as err:
             print(f"[WORKSPACE LAUNCH NOTICE] {err}")
@@ -216,8 +221,9 @@ async def launch_linkedin_workspace(payload: LaunchWorkspacePayload):
     asyncio.create_task(_launch())
     return {
         "status": "success",
-        "message": f"Secure Workspace window launched for {target}",
-        "target_url": target
+        "message": f"Workspace launched at {target_url}",
+        "target_url": target_url
     }
+
 
 
